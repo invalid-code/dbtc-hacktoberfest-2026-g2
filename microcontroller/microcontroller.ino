@@ -85,13 +85,13 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         int pumpMode = doc["pump_mode"];
 
         switch (pump) {
-          case 0:
+          case 1:
             setPumpMode(&curMode1, pumpMode);
             break;
-          case 1:
+          case 2:
             setPumpMode(&curMode2, pumpMode);
             break;
-          case 2:
+          case 3:
             setPumpMode(&curMode3, pumpMode);
             break;
         }
@@ -235,7 +235,7 @@ void loop() {
     Serial.print("Water level 1 percentage: ");
     Serial.println(waterLevel1Percent);
 
-    sendSensorData(0, moisture1Percent, waterLevel1Percent);
+    sendSensorData(1, moisture1Percent, waterLevel1Percent);
     openPump(moisture1Percent, waterLevel1Percent, PUMP1_PIN, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
@@ -254,7 +254,7 @@ void loop() {
     Serial.print("Water level 2 percentage: ");
     Serial.println(waterLevel2Percent);
 
-    sendSensorData(1, moisture2Percent, waterLevel2Percent);
+    sendSensorData(2, moisture2Percent, waterLevel2Percent);
     openPump(moisture2Percent, waterLevel2Percent, PUMP2_PIN, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
@@ -273,7 +273,7 @@ void loop() {
     Serial.print("Water level 3 percentage: ");
     Serial.println(waterLevel3Percent);
 
-    sendSensorData(2, moisture3Percent, waterLevel3Percent);
+    sendSensorData(3, moisture3Percent, waterLevel3Percent);
     openPump(moisture3Percent, waterLevel3Percent, PUMP3_PIN, curMode3);
   }
 }

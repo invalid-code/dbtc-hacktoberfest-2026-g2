@@ -1,17 +1,11 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:web_socket_channel/web_socket_channel.dart';
 
-const apiBaseUrl = String.fromEnvironment('API_BASE_URL');
-
-final wsUrl = apiBaseUrl
-      .replaceFirst('https://', 'wss://')
-      .replaceFirst('http://', 'ws://');
-
-final WebSocketChannel channel = WebSocketChannel.connect(
-  Uri.parse(wsUrl),
-);
+final apiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'http://localhost:8000',
+).replaceFirst(RegExp(r'/$'), '');
 
 class SensorReading {
   const SensorReading({
@@ -202,6 +196,5 @@ class GreenhouseApi {
 
   void dispose() {
     _client.close();
-    channel.sink.close();
   }
 }

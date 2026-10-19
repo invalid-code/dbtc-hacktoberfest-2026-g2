@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import 'api_client.dart';
 
@@ -53,6 +54,7 @@ class HomePage extends StatefulWidget {
 class _HomePage extends State<HomePage> {
   final api = GreenhouseApi();
   GreenhouseSnapshot? snapshot;
+  Timer? _refreshTimer;
 
   int _pumpId(int index) => snapshot != null && snapshot!.pumps.length > index
       ? snapshot!.pumps[index].id
@@ -67,11 +69,17 @@ class _HomePage extends State<HomePage> {
           if (mounted) setState(() => snapshot = value);
         })
         .catchError((_) {});
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      api.loadSnapshot().then((value) {
+        if (mounted) setState(() => snapshot = value);
+      }).catchError((_) {});
+    });
   }
 
   @override
   void dispose() {
     api.dispose();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -1125,7 +1133,7 @@ class _PumpCardState extends State<_PumpCard> {
   );
 
   int _modeValue(String value) =>
-      ['Fast', 'Slow', 'Drip', 'Sprinkle'].indexOf(value) + 1;
+      ['Fast', 'Slow', 'Drip', 'Sprinkle'].indexOf(value);
 }
 
 class _AlertsCard extends StatefulWidget {

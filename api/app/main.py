@@ -6,19 +6,24 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.database import Base, engine, get_db
-from app.models import Pump, PumpHistory, PumpMode, SensorData
+from app.database import AsyncSessionLocal, Base, engine, get_db
+from app.models import Pump, PumpHistory, PumpMode, Sensor, SensorData
 from app.schemas import PumpHistoryRequest, PumpModeRequest, SensorDataRequest
 from .config import settings
 
 app = FastAPI()
-active_websocket: WebSocket | None = None
+active_websockets: set[WebSocket] = set()
+
+
+def allowed_origins() -> list[str]:
+    origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",")]
+    return [origin for origin in origins if origin]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
-    allow_credentials=True,
-    allow_methods=["GET", "PUT", "POST"],
+    allow_origins=allowed_origins(),
+    allow_credentials=settings.FRONTEND_URL != "*",
+    allow_methods=["*"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -27,11 +32,52 @@ app.add_middleware(
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    async with AsyncSessionLocal() as db:
+        for pump_id in (1, 2, 3):
+            await ensure_pump(db, pump_id)
+        await db.commit()
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+async def ensure_sensor(db: AsyncSession, sensor_id: int) -> Sensor:
+    sensor = await db.get(Sensor, sensor_id)
+    if sensor is None:
+        sensor = Sensor(id=sensor_id)
+        db.add(sensor)
+        await db.flush()
+    return sensor
+
+
+async def ensure_pump(db: AsyncSession, pump_id: int) -> Pump:
+    pump = await db.get(Pump, pump_id)
+    if pump is None:
+        pump = Pump(id=pump_id)
+        db.add(pump)
+        await db.flush()
+    return pump
+
+
+async def save_sensor_data(body: SensorDataRequest, db: AsyncSession) -> SensorData:
+    await ensure_sensor(db, body.sensor)
+    new_sensor_data = SensorData(
+        sensor_id=body.sensor,
+        moisture_level=body.moisture_level,
+        water_level=body.water_level,
+        recorded_at=body.recorded_at or datetime.now(),
+    )
+    db.add(new_sensor_data)
+    await db.commit()
+    await db.refresh(new_sensor_data)
+    return new_sensor_data
 
 
 @app.get("/sensor/")
 async def get_sensor(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(SensorData))
+    result = await db.execute(select(Sensor))
     return result.scalars().all()
 
 
@@ -62,6 +108,7 @@ async def update_pump_mode(
     body: PumpModeRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    await ensure_pump(db, body.pump)
     result = await db.execute(select(PumpMode).where(PumpMode.pump_id == body.pump))
     db_pump_mode = result.scalars().first()
 
@@ -74,11 +121,24 @@ async def update_pump_mode(
     await db.commit()
     await db.refresh(db_pump_mode)
 
-    if active_websocket:
-        await active_websocket.send_json(
-            {"pump": db_pump_mode.pump_id, "pump_mode": db_pump_mode.mode}
-        )
+    disconnected = []
+    for websocket in active_websockets:
+        try:
+            await websocket.send_json(
+                {"pump": db_pump_mode.pump_id, "pump_mode": db_pump_mode.mode}
+            )
+        except Exception:
+            disconnected.append(websocket)
+    active_websockets.difference_update(disconnected)
     return db_pump_mode
+
+
+@app.post("/sensor-data/")
+async def create_sensor_data(
+    body: SensorDataRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await save_sensor_data(body, db)
 
 
 @app.get("/pump-history/")
@@ -151,22 +211,14 @@ async def mc_ws(
     websocket: WebSocket,
     db: AsyncSession = Depends(get_db),
 ):
-    global active_websocket
     await websocket.accept()
-    active_websocket = websocket
+    active_websockets.add(websocket)
     try:
         while True:
             sensor_data = await websocket.receive_json()
-            sensor_data_validated = SensorDataRequest.model_validate_json(sensor_data)
-            new_sensor_data = SensorData(
-                sensor_id=sensor_data_validated.sensor,
-                moisture_level=sensor_data_validated.moisture_level,
-                water_level=sensor_data_validated.water_level,
-                recorded_at=sensor_data_validated.recorded_at or datetime.now(),
-            )
-            db.add(new_sensor_data)
-            await db.commit()
-            await db.refresh(new_sensor_data)
+            sensor_data_validated = SensorDataRequest.model_validate(sensor_data)
+            await save_sensor_data(sensor_data_validated, db)
     except WebSocketDisconnect:
         pass
-    active_websocket = None
+    finally:
+        active_websockets.discard(websocket)
