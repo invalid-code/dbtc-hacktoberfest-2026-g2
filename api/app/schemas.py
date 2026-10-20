@@ -77,5 +77,19 @@ class TodayUsageResponse(BaseModel):
     liters: float
 
 
+class GeminiAskRequest(BaseModel):
+    question: str
+
+
+class GeminiInsightResponse(BaseModel):
+    insight: str
+    model: str
+
+
+class GeminiAskResponse(BaseModel):
+    answer: str
+    model: str
+
+
 class HealthResponse(BaseModel):
     status: str

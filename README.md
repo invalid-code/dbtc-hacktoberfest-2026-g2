@@ -18,7 +18,10 @@ DB_CONN_STR=postgresql+asyncpg://user:password@host/database
 FRONTEND_URL=https://your-frontend.example.com
 ```
 
-`FRONTEND_URL` may be a comma-separated list for multiple deployed origins. Run
+`FRONTEND_URL` may be a comma-separated list for multiple deployed origins. Set
+`GEMINI_API_KEY` to a Google AI Studio key to enable the AI endpoints, and
+optionally `GEMINI_MODEL` to pick a different model (default
+`gemini-3.8-flash`). Run
 the Alembic migrations before starting the service:
 
 ```powershell
@@ -27,14 +30,36 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-The API health check is `GET /health`. Sensor devices can use either the
-WebSocket endpoint `/mc-ws/` or `POST /sensor-data/` with this payload:
+The API health check is `GET /health`. Sensor devices send their readings to
+the WebSocket endpoint `/mc-ws/` with this payload:
 
 ```json
 {
   "sensor": 1,
   "moisture_level": 42,
-  "water_level": 78
+  "humidity": 78,
+  "temperature": 23.5
+}
+```
+
+The API stores the readings and broadcasts them to the connected clients, so
+the frontend receives the same `moisture_level`, `humidity`, `temperature` and
+`recorded_at` fields over the WebSocket.
+
+## AI endpoints
+
+When `GEMINI_API_KEY` is set, the API answers with Gemini. Both endpoints read
+the latest sensor reading, the recent readings, the pump history and the
+active alerts, and use that state as context.
+
+- `GET /gemini/insight/` returns a short insight and the next action to take.
+- `POST /gemini/ask/` takes `{"question": "..."}` and answers it about the
+  greenhouse.
+
+```json
+{
+  "insight": "Soil moisture is trending down over the last readings, so the next watering is due soon.",
+  "model": "gemini-3.8-flash"
 }
 ```
 

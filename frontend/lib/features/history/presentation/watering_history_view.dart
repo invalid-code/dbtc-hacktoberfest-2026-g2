@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/widgets/empty_history.dart';
 import 'package:frontend/core/widgets/formatting.dart';
 import 'package:frontend/core/widgets/panel.dart';
@@ -7,7 +8,9 @@ import 'package:frontend/core/widgets/sort_menu.dart';
 import 'package:frontend/features/history/presentation/viewmodel/watering_history_view_model.dart';
 
 class WateringHistoryView extends StatefulWidget {
-  const WateringHistoryView({super.key});
+  const WateringHistoryView({super.key, this.api});
+
+  final GreenhouseApi? api;
 
   @override
   State<WateringHistoryView> createState() => _WateringHistoryViewState();
@@ -19,7 +22,7 @@ class _WateringHistoryViewState extends State<WateringHistoryView> {
   @override
   void initState() {
     super.initState();
-    _viewModel = WateringHistoryViewModel()..start();
+    _viewModel = WateringHistoryViewModel(api: widget.api)..start();
   }
 
   @override

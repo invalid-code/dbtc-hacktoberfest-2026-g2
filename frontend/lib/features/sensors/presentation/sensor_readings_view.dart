@@ -4,12 +4,13 @@ import 'package:frontend/core/widgets/chart_painter.dart';
 import 'package:frontend/core/widgets/conditions_card.dart';
 import 'package:frontend/core/widgets/panel.dart';
 import 'package:frontend/core/widgets/side_bar.dart';
-import 'package:frontend/features/sensors/data/sensor_reading.dart';
 import 'package:frontend/features/sensors/presentation/viewmodel/sensor_readings_view_model.dart';
 import 'package:frontend/features/sensors/presentation/widgets/line_chart_painter.dart';
 
 class SensorReadingsView extends StatefulWidget {
-  const SensorReadingsView({super.key});
+  const SensorReadingsView({super.key, this.api});
+
+  final GreenhouseApi? api;
 
   @override
   State<SensorReadingsView> createState() => _SensorReadingsViewState();
@@ -21,7 +22,7 @@ class _SensorReadingsViewState extends State<SensorReadingsView> {
   @override
   void initState() {
     super.initState();
-    _viewModel = SensorReadingsViewModel()..start();
+    _viewModel = SensorReadingsViewModel(api: widget.api)..start();
   }
 
   @override

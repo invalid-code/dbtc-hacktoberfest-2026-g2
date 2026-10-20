@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class Panel extends StatelessWidget {
-  const Panel({
+  const Panel({super.key, 
     required this.title,
     required this.child,
     this.fillHeight = false,

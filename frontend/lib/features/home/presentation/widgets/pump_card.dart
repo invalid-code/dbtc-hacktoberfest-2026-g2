@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 
+import 'package:frontend/model/pump_info.dart';
+
 class PumpCard extends StatefulWidget {
   const PumpCard({
     super.key,
     required this.name,
     required this.pumpId,
+    this.initialMode,
     this.onModeChanged,
   });
 
   final String name;
   final int pumpId;
+  final int? initialMode;
   final Future<void> Function(int pumpId, int mode)? onModeChanged;
 
   @override
@@ -18,7 +22,20 @@ class PumpCard extends StatefulWidget {
 
 class _PumpCardState extends State<PumpCard> {
   bool running = true;
-  String mode = 'Drip';
+  late String mode;
+
+  @override
+  void initState() {
+    super.initState();
+    mode = pumpModeLabel(widget.initialMode);
+  }
+
+  @override
+  void didUpdateWidget(PumpCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = pumpModeLabel(widget.initialMode);
+    if (next != mode) setState(() => mode = next);
+  }
 
   @override
   Widget build(BuildContext context) => Container(
@@ -44,19 +61,13 @@ class _PumpCardState extends State<PumpCard> {
           value: mode,
           isDense: true,
           isExpanded: true,
-          items: ['Fast', 'Slow', 'Drip', 'Sprinkle']
+          items: pumpModeLabels
               .map(
                 (value) =>
                     DropdownMenuItem(value: value, child: Text('Mode: $value')),
               )
               .toList(),
-          onChanged: (value) async {
-            final next = value ?? mode;
-            setState(() => mode = next);
-            try {
-              await widget.onModeChanged?.call(widget.pumpId, _modeValue(next));
-            } catch (_) {}
-          },
+          onChanged: _changeMode,
         ),
         const Spacer(),
         SizedBox(
@@ -78,6 +89,21 @@ class _PumpCardState extends State<PumpCard> {
     ),
   );
 
-  int _modeValue(String value) =>
-      ['Fast', 'Slow', 'Drip', 'Sprinkle'].indexOf(value);
+  Future<void> _changeMode(String? value) async {
+    if (value == null || value == mode) return;
+    final previous = mode;
+    setState(() => mode = value);
+    try {
+      await widget.onModeChanged?.call(
+        widget.pumpId,
+        pumpModeLabels.indexOf(value),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => mode = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not update the pump mode')),
+      );
+    }
+  }
 }

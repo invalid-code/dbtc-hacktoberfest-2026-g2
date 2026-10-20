@@ -7,6 +7,7 @@ import 'package:frontend/core/network/sensor_ws.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 import 'package:frontend/model/alert.dart';
+import 'package:frontend/model/pump_info.dart';
 
 class HomeViewModel extends ChangeNotifier {
   HomeViewModel({GreenhouseApi? api, SensorFeed? feed})
@@ -16,12 +17,14 @@ class HomeViewModel extends ChangeNotifier {
   final GreenhouseApi _api;
   final SensorFeed _feed;
   StreamSubscription<SensorReading>? _sensorSub;
+  bool _disposed = false;
 
   GreenhouseSnapshot? snapshot;
   double? todayUsageLiters;
   List<Alert>? alerts;
   List<double>? monthlyUsage;
   List<PumpHistoryEntry>? history;
+  bool snapshotFailed = false;
   bool usageFailed = false;
   bool alertsFailed = false;
   bool historyFailed = false;
@@ -31,54 +34,121 @@ class HomeViewModel extends ChangeNotifier {
           ? snapshot!.pumps[index].id
           : index + 1;
 
+  int? pumpModeFor(int index) =>
+      snapshot != null && snapshot!.pumps.length > index
+          ? snapshot!.pumps[index].mode
+          : null;
+
   void start() {
     _loadInitial();
+    _feed.connect();
     _sensorSub = _feed.readings.listen(_onSensorReading);
   }
 
   Future<void> _loadInitial() async {
-    try {
-      snapshot = await _api.loadSnapshot();
-      notifyListeners();
-    } catch (_) {}
+    await Future.wait([
+      _loadSnapshot(),
+      _loadUsage(),
+      _loadAlerts(),
+      _loadHistory(),
+    ]);
+  }
 
+  Future<void> _loadSnapshot() async {
+    var failed = false;
+
+    SensorReading? sensor;
+    try {
+      sensor = await _api.loadLatestSensorReading();
+    } catch (_) {
+      failed = true;
+    }
+
+    var pumps = <PumpInfo>[];
+    try {
+      pumps = await _api.loadPumps();
+    } catch (_) {
+      failed = true;
+    }
+
+    var modes = <int, int>{};
+    try {
+      modes = await _api.loadPumpModes();
+    } catch (_) {
+      failed = true;
+    }
+
+    snapshotFailed = failed;
+    snapshot = GreenhouseSnapshot(
+      sensor: sensor,
+      pumps: pumps
+          .map((pump) => PumpInfo(id: pump.id, mode: modes[pump.id]))
+          .toList(),
+    );
+    _notify();
+  }
+
+  Future<void> _loadUsage() async {
     try {
       todayUsageLiters = await _api.loadTodayWaterUsage();
-      notifyListeners();
     } catch (_) {
       usageFailed = true;
-      notifyListeners();
     }
+    _notify();
+  }
 
+  Future<void> _loadAlerts() async {
     try {
       alerts = await _api.loadAlerts();
-      notifyListeners();
     } catch (_) {
       alertsFailed = true;
-      notifyListeners();
     }
+    _notify();
+  }
 
+  Future<void> _loadHistory() async {
     try {
       final entries = await _api.loadPumpHistory();
       history = entries;
       monthlyUsage = entries.isEmpty ? const [] : monthlyUsageFrom(entries);
-      notifyListeners();
     } catch (_) {
       historyFailed = true;
-      notifyListeners();
     }
+    _notify();
   }
 
   void _onSensorReading(SensorReading reading) {
+    final current = snapshot;
     snapshot = GreenhouseSnapshot(
       sensor: reading,
-      pumps: snapshot?.pumps ?? const [],
+      pumps: current?.pumps ?? const [],
     );
-    notifyListeners();
+    _notify();
   }
 
-  Future<void> updatePumpMode(int pump, int mode) =>
-      _api.updatePumpMode(pump, mode);
+  Future<void> updatePumpMode(int pump, int mode) async {
+    await _api.updatePumpMode(pump, mode);
+    _applyPumpMode(pump, mode);
+  }
+
+  void _applyPumpMode(int pump, int mode) {
+    final current = snapshot;
+    if (current == null) return;
+    snapshot = GreenhouseSnapshot(
+      sensor: current.sensor,
+      pumps: current.pumps
+          .map(
+            (item) => item.id == pump ? PumpInfo(id: item.id, mode: mode) : item,
+          )
+          .toList(),
+    );
+    _notify();
+  }
+
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
 
   static List<double> monthlyUsageFrom(List<PumpHistoryEntry> entries) {
     final year = DateTime.now().year;
@@ -95,6 +165,7 @@ class HomeViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _sensorSub?.cancel();
     _api.dispose();
     _feed.dispose();

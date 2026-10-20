@@ -12,14 +12,27 @@ class SensorFeed {
   final String _baseUrl;
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
+  Timer? _reconnectTimer;
+  bool _disposed = false;
   final _controller = StreamController<SensorReading>.broadcast();
 
   Stream<SensorReading> get readings => _controller.stream;
 
   void connect() {
+    if (_disposed || _channel != null) return;
     final wsBase = _baseUrl.replaceFirst(RegExp(r'^http'), 'ws');
-    _channel = WebSocketChannel.connect(Uri.parse('$wsBase/mc-ws/'));
-    _subscription = _channel!.stream.listen(_onMessage);
+    try {
+      final channel = WebSocketChannel.connect(Uri.parse('$wsBase/mc-ws/'));
+      _channel = channel;
+      _subscription = channel.stream.listen(
+        _onMessage,
+        onError: _onError,
+        onDone: _onDone,
+      );
+    } catch (_) {
+      _closeChannel();
+      _scheduleReconnect();
+    }
   }
 
   void _onMessage(dynamic event) {
@@ -30,9 +43,36 @@ class SensorFeed {
     } catch (_) {}
   }
 
-  void dispose() {
+  void _onError(Object error) {
+    _closeChannel();
+    _scheduleReconnect();
+  }
+
+  void _onDone() {
+    _closeChannel();
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (_disposed || _reconnectTimer != null) return;
+    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+      _reconnectTimer = null;
+      connect();
+    });
+  }
+
+  void _closeChannel() {
     _subscription?.cancel();
+    _subscription = null;
     _channel?.sink.close();
+    _channel = null;
+  }
+
+  void dispose() {
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _closeChannel();
     _controller.close();
   }
 }

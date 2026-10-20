@@ -21,6 +21,15 @@ async def get_latest_sensor_data(db: AsyncSession) -> SensorData | None:
     return result.scalars().first()
 
 
+async def get_recent_sensor_data(
+    db: AsyncSession, limit: int = 10
+) -> list[SensorData]:
+    result = await db.execute(
+        select(SensorData).order_by(SensorData.recorded_at.desc()).limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def get_or_create_sensor(db: AsyncSession, sensor_id: int) -> Sensor:
     sensor = await db.get(Sensor, sensor_id)
     if sensor is None:

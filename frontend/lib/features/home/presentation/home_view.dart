@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/core/network/api_client.dart';
+import 'package:frontend/core/network/sensor_ws.dart';
 import 'package:frontend/core/widgets/conditions_card.dart';
 import 'package:frontend/core/widgets/side_bar.dart';
 import 'package:frontend/features/home/presentation/viewmodel/home_view_model.dart';
@@ -8,7 +10,10 @@ import 'package:frontend/features/home/presentation/widgets/pump_card.dart';
 import 'package:frontend/features/home/presentation/widgets/usage_chart.dart';
 
 class HomeView extends StatefulWidget {
-  const HomeView({super.key});
+  const HomeView({super.key, this.api, this.feed});
+
+  final GreenhouseApi? api;
+  final SensorFeed? feed;
 
   @override
   State<HomeView> createState() => _HomeViewState();
@@ -20,7 +25,7 @@ class _HomeViewState extends State<HomeView> {
   @override
   void initState() {
     super.initState();
-    _viewModel = HomeViewModel()..start();
+    _viewModel = HomeViewModel(api: widget.api, feed: widget.feed)..start();
   }
 
   @override
@@ -47,6 +52,7 @@ class _HomeViewState extends State<HomeView> {
                       ConditionsCard(
                         snapshot: _viewModel.snapshot,
                         todayUsageLiters: _viewModel.todayUsageLiters,
+                        failed: _viewModel.snapshotFailed,
                       ),
                       const SizedBox(height: 22),
                       LayoutBuilder(
@@ -123,16 +129,19 @@ class _HomeViewState extends State<HomeView> {
                                     PumpCard(
                                       name: 'Water Pump #1',
                                       pumpId: _viewModel.pumpIdFor(0),
+                                      initialMode: _viewModel.pumpModeFor(0),
                                       onModeChanged: _viewModel.updatePumpMode,
                                     ),
                                     PumpCard(
                                       name: 'Water Pump #2',
                                       pumpId: _viewModel.pumpIdFor(1),
+                                      initialMode: _viewModel.pumpModeFor(1),
                                       onModeChanged: _viewModel.updatePumpMode,
                                     ),
                                     PumpCard(
                                       name: 'Water Pump #3',
                                       pumpId: _viewModel.pumpIdFor(2),
+                                      initialMode: _viewModel.pumpModeFor(2),
                                       onModeChanged: _viewModel.updatePumpMode,
                                     ),
                                   ],

@@ -1,3 +1,10 @@
+const pumpModeLabels = ['Fast', 'Slow', 'Drip', 'Sprinkle'];
+
+String pumpModeLabel(int? mode) =>
+    mode == null || mode < 0 || mode >= pumpModeLabels.length
+    ? pumpModeLabels.first
+    : pumpModeLabels[mode];
+
 class PumpInfo {
   const PumpInfo({required this.id, required this.mode});
 

@@ -4,10 +4,16 @@ import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/widgets/formatting.dart';
 
 class ConditionsCard extends StatelessWidget {
-  const ConditionsCard({super.key, this.snapshot, this.todayUsageLiters});
+  const ConditionsCard({
+    super.key,
+    this.snapshot,
+    this.todayUsageLiters,
+    this.failed = false,
+  });
 
   final GreenhouseSnapshot? snapshot;
   final double? todayUsageLiters;
+  final bool failed;
 
   @override
   Widget build(BuildContext context) {
@@ -40,9 +46,16 @@ class ConditionsCard extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           if (snapshot?.sensor == null)
-            const SizedBox(
+            SizedBox(
               height: 180,
-              child: Center(child: _EmptySensor()),
+              child: Center(
+                child: failed
+                    ? const Text(
+                        'Could not load sensor readings',
+                        style: TextStyle(color: Colors.black54),
+                      )
+                    : const _EmptySensor(),
+              ),
             )
           else
             LayoutBuilder(
@@ -70,7 +83,7 @@ class ConditionsCard extends StatelessWidget {
                   ),
                   _MetricCard(
                     label: 'Humidity',
-                    value: '${snapshot?.sensor?.waterLevel ?? 45}%',
+                    value: '${snapshot?.sensor?.humidity ?? 45}%',
                   ),
                   _MetricCard(
                     label: 'Temperature',

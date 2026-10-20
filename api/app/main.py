@@ -7,7 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import AsyncSessionLocal, Base, engine
-from app.routers import alert_router, pump_router, sensor_router, websocket_router
+from app.routers import (
+    alert_router,
+    gemini_router,
+    pump_router,
+    sensor_router,
+    websocket_router,
+)
 from app.services import device_service, pump_service
 
 
@@ -49,6 +55,7 @@ app.add_middleware(
 app.include_router(sensor_router.router)
 app.include_router(pump_router.router)
 app.include_router(alert_router.router)
+app.include_router(gemini_router.router)
 app.include_router(websocket_router.router)
 
 
