@@ -4,11 +4,11 @@
 #include <WebSocketsClient.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
-// #include <stdio.h>
-// #include <string.h>
-// #include <stdlib.h>
-#include "DHT.h"
 #include <HTTPClient.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
+#include "DHT.h"
 
 #include "secrets.h"
 
@@ -48,9 +48,24 @@ const int MOISTURE_HIGH_VAL = 2800;
 const int WATER_LEVEL_LOW_VAL = 0;
 const int WATER_LEVEL_HIGH_VAL = 1400;
 
+const int FAST_RUN_MS = 750;
+const int SLOW_RUN_MS = 750;
+const int DRIP_RUN_MS = 150;
+
+const int SLOW_PWM = 120;
+
+const float PUMP_LITRES_PER_SECOND = 0.008f;
+
 int curMode1 = FAST;
 int curMode2 = FAST;
 int curMode3 = FAST;
+
+struct UsageReport {
+  int pumpId;
+  float litres;
+};
+
+QueueHandle_t usageQueue = nullptr;
 
 const char* modeName(int mode) {
   switch (mode) {
@@ -72,7 +87,6 @@ int modeFromName(const String& name) {
   return FAST;
 }
 
-// the slot holding the mode a pump is currently running in
 int* modeSlotFor(int pumpId) {
   switch (pumpId) {
     case 1:
@@ -85,7 +99,6 @@ int* modeSlotFor(int pumpId) {
   return nullptr;
 }
 
-// the gpio pin driving a pump
 int pumpPinFor(int pumpId) {
   switch (pumpId) {
     case 1:
@@ -96,6 +109,21 @@ int pumpPinFor(int pumpId) {
       return PUMP3_PIN;
   }
   return -1;
+}
+
+float modeLitres(int mode) {
+  switch (mode) {
+    case FAST:
+      return PUMP_LITRES_PER_SECOND * (FAST_RUN_MS / 1000.0f);
+    case SLOW:
+      return PUMP_LITRES_PER_SECOND * (SLOW_RUN_MS / 1000.0f) *
+             (SLOW_PWM / 255.0f);
+    case DRIP:
+      return PUMP_LITRES_PER_SECOND * (DRIP_RUN_MS / 1000.0f);
+    case SPRINKLE:
+      return 0.0f;
+  }
+  return 0.0f;
 }
 
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
@@ -109,8 +137,6 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
       break;
 
     case WStype_TEXT:
-      // the socket is only used to publish sensor readings, commands arrive
-      // over the http server instead
       Serial.printf("Received: %s\n", payload);
       break;
 
@@ -125,7 +151,6 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
-// GET /mode -> the mode every pump is currently running in
 void handleGetMode() {
   String json = "{\"modes\":{";
   json += "\"1\":\"" + String(modeName(curMode1)) + "\",";
@@ -135,7 +160,6 @@ void handleGetMode() {
   deviceServer.send(200, "application/json", json);
 }
 
-// POST /mode -> switch a pump to the requested mode
 void handlePostMode() {
   int pumpId = 0;
   int mode = FAST;
@@ -176,50 +200,73 @@ void handlePostMode() {
   deviceServer.send(200, "application/json", json);
 }
 
-void sendPumpWaterUsage(int pumpId, float waterUsage) {
+void sendPumpWaterUsage(int pumpId, float litres) {
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Skipping pump water usage, wifi is down");
     return;
   }
 
-  WiFiClient client;
   HTTPClient http;
-
-  String url = String(SERVER_URL) + String(PUMP_HISTORY_PATH);
-  http.begin(client, url);
+  String url = String(API_SERVER_URL) + String(PUMP_HISTORY_PATH);
+  if (!http.begin(url)) {
+    Serial.println("Could not start the pump history request");
+    return;
+  }
   http.addHeader("Content-Type", "application/json");
 
-  char usageStr[16];
-  snprintf(usageStr, sizeof(usageStr), "%.2f", waterUsage);
+  char litresStr[16];
+  snprintf(litresStr, sizeof(litresStr), "%.4f", litres);
+  String body =
+      "{\"pump\":" + String(pumpId) + ",\"liters\":" + String(litresStr) + "}";
 
-  String body = "{\"pump\":" + String(pumpId) + ",\"liters\":" + String(usageStr) + "}";
-  int httpResponseCode = http.POST(body);
-
-  if (httpResponseCode > 0) {
-    Serial.printf("Sent pump water usage for pump %d\n", pumpId);
+  int status = http.POST(body);
+  if (status >= 200 && status < 300) {
+    Serial.printf("Reported %.4f litres for pump %d\n", litres, pumpId);
   } else {
-    Serial.printf("Failed to send pump water usage: %d\n", httpResponseCode);
+    Serial.printf("Pump history request failed (%d): %s\n", status,
+                  http.getString().c_str());
   }
   http.end();
+}
+
+void reportWaterUsage(int pumpId, float litres) {
+  if (usageQueue == nullptr) {
+    return;
+  }
+  UsageReport report = {pumpId, litres};
+  if (xQueueSend(usageQueue, &report, 0) != pdTRUE) {
+    Serial.println("Dropped a pump water usage report, queue is full");
+  }
+}
+
+void usageReporterTask(void* arg) {
+  (void)arg;
+  for (;;) {
+    UsageReport report;
+    if (xQueueReceive(usageQueue, &report, portMAX_DELAY) == pdTRUE) {
+      sendPumpWaterUsage(report.pumpId, report.litres);
+    }
+  }
 }
 
 void fast(int pumpPin) {
   Serial.println("-- Fast Flow Mode --");
   digitalWrite(pumpPin, HIGH);
-  delay(750);
+  delay(FAST_RUN_MS);
   digitalWrite(pumpPin, LOW);
 }
 
 void slow(int pumpPin) {
   Serial.println("-- Slow Flow Mode --");
-  analogWrite(pumpPin, 120);
-  delay(750);
+  analogWrite(pumpPin, SLOW_PWM);
+  delay(SLOW_RUN_MS);
   analogWrite(pumpPin, 0);
 }
 
 void drip(int pumpPin) {
   Serial.println("-- Drip Flow Mode --");
   digitalWrite(pumpPin, HIGH);
-  delay(150);
+  delay(DRIP_RUN_MS);
 
   digitalWrite(pumpPin, LOW);
   delay(2500);
@@ -259,7 +306,7 @@ void activatePumpMode(int pumpId, int pumpPin, int curMode) {
       sprinkle(pumpPin);
       break;
   }
-  sendPumpWaterUsage(pumpId, 0.0);
+  reportWaterUsage(pumpId, modeLitres(curMode));
 }
 
 void openPump(int pumpId, int moisturePercent, float tempValue, float humidityValue, int curMode) {
@@ -283,9 +330,16 @@ void setup() {
   Serial.print("Connected to WiFi network with IP Address: ");
   Serial.println(WiFi.localIP());
 
-  webSocket.begin(SERVER_URL, SERVER_PORT, WS_PATH);
+  webSocket.begin(WS_SERVER_URL, WS_SERVER_PORT, WS_PATH);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
+
+  usageQueue = xQueueCreate(8, sizeof(UsageReport));
+  if (usageQueue != nullptr) {
+    xTaskCreate(usageReporterTask, "usageReporter", 4096, nullptr, 1, nullptr);
+  } else {
+    Serial.println("Could not create the pump water usage queue");
+  }
 
   deviceServer.on("/mode", HTTP_GET, handleGetMode);
   deviceServer.on("/mode", HTTP_POST, handlePostMode);
