@@ -78,14 +78,6 @@ class GreenhouseApi {
     return readings;
   }
 
-  Future<void> updatePumpMode(int pump, int pumpMode) async {
-    await _request(
-      '/pump-mode/',
-      method: 'PUT',
-      body: {'pump': pump, 'pump_mode': pumpMode},
-    );
-  }
-
   Future<List<PumpHistoryEntry>> loadPumpHistory() async {
     final response = await _get('/pump-history/');
     return (response as List)
@@ -115,26 +107,6 @@ class GreenhouseApi {
       throw Exception('GET $path failed: ${response.statusCode}');
     }
     return jsonDecode(response.body);
-  }
-
-  Future<void> _request(
-    String path, {
-    required String method,
-    required Map<String, dynamic> body,
-  }) async {
-    final uri = Uri.parse('$apiBaseUrl$path');
-    final response = method == 'PUT'
-        ? await _client
-              .put(
-                uri,
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(body),
-              )
-              .timeout(const Duration(seconds: 3))
-        : throw UnsupportedError(method);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('$method $path failed: ${response.statusCode}');
-    }
   }
 
   void dispose() {

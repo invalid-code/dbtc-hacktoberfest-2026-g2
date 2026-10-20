@@ -1,8 +1,13 @@
+// TODO need to know how much water was used and send the data to the backend
+
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
+#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include "DHT.h"
+#include <HTTPClient.h>
 
 #include "secrets.h"
 
@@ -40,6 +45,9 @@ const int MOISTURE_LOW_VAL = 0;
 const int MOISTURE_HIGH_VAL = 2800;
 const int WATER_LEVEL_LOW_VAL = 0;
 const int WATER_LEVEL_HIGH_VAL = 1400;
+
+const int PUMP_MODE_CONTROL = 0;
+const int PUMP_ACTIVATE_CONTROL = 1;
 
 int curMode1 = FAST;
 int curMode2 = FAST;
@@ -85,19 +93,46 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
           return;
         }
 
+        int pumpControl = doc["pump_control"];
         int pump = doc["pump"];
-        int pumpMode = doc["pump_mode"];
+        switch (pumpControl) {
+          case PUMP_MODE_CONTROL:
+            {
+              int pumpMode = doc["pump_mode"];
+              int* curMode;
 
-        switch (pump) {
-          case 1:
-            setPumpMode(&curMode1, pumpMode);
-            break;
-          case 2:
-            setPumpMode(&curMode2, pumpMode);
-            break;
-          case 3:
-            setPumpMode(&curMode3, pumpMode);
-            break;
+              switch (pump) {
+                case 1:
+                  curMode = &curMode1;
+                  break;
+                case 2:
+                  curMode = &curMode2;
+                  break;
+                case 3:
+                  curMode = &curMode3;
+                  break;
+              }
+              setPumpMode(curMode, pumpMode);
+              break;
+            }
+          case PUMP_ACTIVATE_CONTROL:
+            // for now only activate based on cur mode of a pump
+            {
+              int curMode = 0;
+              switch (pump) {
+                case 1:
+                  curMode = curMode1;
+                  break;
+                case 2:
+                  curMode = curMode2;
+                  break;
+                case 3:
+                  curMode = curMode3;
+                  break;
+              }
+              openPump(PUMP_ACTIVATE_CONTROL, 0, 0, 0, pump, curMode);
+              break;
+            }
         }
       }
       break;
@@ -110,6 +145,25 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
     case WStype_PING:
     case WStype_PONG:
       break;
+  }
+}
+
+void sendPumpWaterUsage(int pump, float waterUsage) {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
+
+    size_t serverUrlStrLen = strlen(SERVER_URL);
+    size_t pumpHistoryStrLen = strlen(PUMP_HISTORY_PATH);
+    char* serverStr = (char*)malloc((serverUrlStrLen + pumpHistoryStrLen) * sizeof(char));
+    sprintf(serverStr, "%s%s", SERVER_URL, PUMP_HISTORY_PATH);
+
+    http.begin(client, serverStr);
+    http.addHeader("Content-Type", "application/json");
+    char* httpRequestData = (char*)malloc(1);
+    int httpResponseCode = http.POST(httpRequestData);
+
+    Serial.println("Sent pump water usage data payload");
   }
 }
 
@@ -140,13 +194,13 @@ void sprinkle(int pumpPin) {
   Serial.println("-- Sprinkle Flow Mode --");
 }
 
-void sendSensorData(int sensor, int moisturePercent, int waterLevelPercent, float tempSensorValue) {
+void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, float humiditySensorValue) {
   if (WiFi.status() == WL_CONNECTED) {
     JsonDocument doc;
     doc["sensor"] = sensor;
     doc["moisture_level"] = moisturePercent;
-    doc["water_level"] = waterLevelPercent;
     doc["temperature"] = tempSensorValue;
+    doc["humidity"] = tempSensorValue;
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -155,24 +209,34 @@ void sendSensorData(int sensor, int moisturePercent, int waterLevelPercent, floa
   }
 }
 
-void openPump(int moisturePercent, int waterLevelPercent, int pump, int curMode) {
-  if (moisturePercent <= 30 && waterLevelPercent >= 30) {
-    switch (curMode) {
-      case FAST:
-        fast(pump);
-        break;
-      case SLOW:
-        slow(pump);
-        break;
-      case DRIP:
-        drip(pump);
-        break;
-      case SPRINKLE:
-        sprinkle(pump);
-        break;
-    }
-  } else {
+void activatePumpMode(int pump, int curMode) {
+  switch (curMode) {
+    case FAST:
+      fast(pump);
+      break;
+    case SLOW:
+      slow(pump);
+      break;
+    case DRIP:
+      drip(pump);
+      break;
+    case SPRINKLE:
+      sprinkle(pump);
+      break;
+  }
+  sendPumpWaterUsage(pump);
+}
 
+void openPump(int pumpControl, int moisturePercent, float tempValue, float humidityValue, int pump, int curMode) {
+  // on the occasion that the conditions should allow for both to activate prioritize the PUMP_ACTIVATE_CONTROL
+  if (pumpControl == PUMP_ACTIVATE_CONTROL) {
+    activatePumpMode(pump, curMode);
+  } else {
+    if (moisturePercent <= 30 && tempValue > 30.0 && humidityValue > 70.0) {
+      activatePumpMode(pump, curMode);
+    } else if (moisturePercent <= 30) {
+      activatePumpMode(pump, curMode);
+    }
   }
 }
 
@@ -237,20 +301,17 @@ void loop() {
     Serial.print("Soil moisture 1 percentage: ");
     Serial.println(moisture1Percent);
 
-    int waterLevel1Value = analogRead(WATER_LEVEL_PIN_1);
-    int waterLevel1Percent = map(waterLevel1Value, WATER_LEVEL_LOW_VAL, WATER_LEVEL_HIGH_VAL, 0, 100);
-    waterLevel1Percent = constrain(waterLevel1Percent, 0, 100);
-    Serial.print("Water level 1 raw: ");
-    Serial.println(waterLevel1Value);
-    Serial.print("Water level 1 percentage: ");
-    Serial.println(waterLevel1Percent);
 
     float tempSensor1Value = tempSensor1.readTemperature();
     Serial.print("Temperature 1 raw: ");
     Serial.println(tempSensor1Value);
 
-    sendSensorData(1, moisture1Percent, waterLevel1Percent, tempSensor1Value);
-    openPump(moisture1Percent, waterLevel1Percent, PUMP1_PIN, curMode1);
+    float humiditySensor1Value = tempSensor1.readHumidity();
+    Serial.print("Humidity 1 raw: ");
+    Serial.println(humiditySensor1Value);
+
+    sendSensorData(1, moisture1Percent, tempSensor1Value, humiditySensor1Value);                 // TODO need to make magic value for sensor numbers
+    openPump(0, moisture1Percent, tempSensor1Value, humiditySensor1Value, PUMP1_PIN, curMode1);  // not PUMP_ACTIVATE_CONTROL
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
     int moisture2Percent = map(moisture2Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
@@ -260,20 +321,16 @@ void loop() {
     Serial.print("Soil moisture 2 percentage: ");
     Serial.println(moisture2Percent);
 
-    int waterLevel2Value = analogRead(WATER_LEVEL_PIN_2);
-    int waterLevel2Percent = map(waterLevel2Value, WATER_LEVEL_LOW_VAL, WATER_LEVEL_HIGH_VAL, 0, 100);
-    waterLevel2Percent = constrain(waterLevel2Percent, 0, 100);
-    Serial.print("Water level 2 raw: ");
-    Serial.println(waterLevel2Value);
-    Serial.print("Water level 2 percentage: ");
-    Serial.println(waterLevel2Percent);
-
     float tempSensor2Value = tempSensor2.readTemperature();
     Serial.print("Temperature 2 raw: ");
     Serial.println(tempSensor2Value);
 
-    sendSensorData(2, moisture2Percent, waterLevel2Percent, tempSensor2Value);
-    openPump(moisture2Percent, waterLevel2Percent, PUMP2_PIN, curMode2);
+    float humiditySensor2Value = tempSensor2.readHumidity();
+    Serial.print("Humidity 2 raw: ");
+    Serial.println(humiditySensor2Value);
+
+    sendSensorData(2, moisture2Percent, tempSensor2Value, humiditySensor2Value);                 // TODO need to make magic value for sensor numbers
+    openPump(0, moisture2Percent, tempSensor2Value, humiditySensor2Value, PUMP2_PIN, curMode2);  // not PUMP_ACTIVATE_CONTROL
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
     int moisture3Percent = map(moisture3Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
@@ -283,19 +340,15 @@ void loop() {
     Serial.print("Soil moisture 3 percentage: ");
     Serial.println(moisture3Percent);
 
-    int waterLevel3Value = analogRead(WATER_LEVEL_PIN_3);
-    int waterLevel3Percent = map(waterLevel3Value, WATER_LEVEL_LOW_VAL, WATER_LEVEL_HIGH_VAL, 0, 100);
-    waterLevel3Percent = constrain(waterLevel3Percent, 0, 100);
-    Serial.print("Water level 3 raw: ");
-    Serial.println(waterLevel3Value);
-    Serial.print("Water level 3 percentage: ");
-    Serial.println(waterLevel3Percent);
-
     float tempSensor3Value = tempSensor3.readTemperature();
     Serial.print("Temperature 3 raw: ");
     Serial.println(tempSensor3Value);
 
-    sendSensorData(3, moisture3Percent, waterLevel3Percent, tempSensor3Value);
-    openPump(moisture3Percent, waterLevel3Percent, PUMP3_PIN, curMode3);
+    float humiditySensor3Value = tempSensor3.readHumidity();
+    Serial.print("Humidity 3 raw: ");
+    Serial.println(humiditySensor3Value);
+
+    sendSensorData(3, moisture3Percent, tempSensor3Value, humiditySensor3Value);                 // TODO need to make magic value for sensor numbers
+    openPump(0, moisture3Percent, tempSensor3Value, humiditySensor3Value, PUMP3_PIN, curMode3);  // not PUMP_ACTIVATE_CONTROL
   }
 }

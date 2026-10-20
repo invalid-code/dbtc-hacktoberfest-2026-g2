@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'package:frontend/core/network/api_client.dart';
-
 class PumpCard extends StatefulWidget {
   const PumpCard({super.key, required this.name, required this.pumpId});
+
   final String name;
   final int pumpId;
 
@@ -14,13 +13,6 @@ class PumpCard extends StatefulWidget {
 class _PumpCardState extends State<PumpCard> {
   bool running = true;
   String mode = 'Drip';
-  final api = GreenhouseApi();
-
-  @override
-  void dispose() {
-    api.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) => Container(
@@ -52,12 +44,9 @@ class _PumpCardState extends State<PumpCard> {
                     DropdownMenuItem(value: value, child: Text('Mode: $value')),
               )
               .toList(),
-          onChanged: (value) async {
+          onChanged: (value) {
             final next = value ?? mode;
             setState(() => mode = next);
-            try {
-              await api.updatePumpMode(widget.pumpId, _modeValue(next));
-            } catch (_) {}
           },
         ),
         const Spacer(),
@@ -79,7 +68,4 @@ class _PumpCardState extends State<PumpCard> {
       ],
     ),
   );
-
-  int _modeValue(String value) =>
-      ['Fast', 'Slow', 'Drip', 'Sprinkle'].indexOf(value);
 }

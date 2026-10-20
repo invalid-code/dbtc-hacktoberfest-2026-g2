@@ -1,46 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/widgets/formatting.dart';
 import 'package:frontend/core/widgets/panel.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 
-class HistorySummary extends StatefulWidget {
-  const HistorySummary({super.key});
+class HistorySummary extends StatelessWidget {
+  const HistorySummary({super.key, this.history, this.failed = false});
 
-  @override
-  State<HistorySummary> createState() => _HistorySummaryState();
-}
-
-class _HistorySummaryState extends State<HistorySummary> {
-  final api = GreenhouseApi();
-  List<PumpHistoryEntry>? history;
-  bool failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final entries = await api.loadPumpHistory();
-      if (mounted) setState(() => history = entries);
-    } catch (_) {
-      if (mounted) setState(() => failed = true);
-    }
-  }
-
-  @override
-  void dispose() {
-    api.dispose();
-    super.dispose();
-  }
+  final List<PumpHistoryEntry>? history;
+  final bool failed;
 
   @override
   Widget build(BuildContext context) {
-    final entries = history;
     return Panel(
       title: 'History Summary',
       child: failed
@@ -48,14 +19,14 @@ class _HistorySummaryState extends State<HistorySummary> {
               'Could not load history',
               style: TextStyle(color: Colors.black54),
             )
-          : entries == null
+          : history == null
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: CircularProgressIndicator(),
               ),
             )
-          : _summary(entries),
+          : _summary(history!),
     );
   }
 

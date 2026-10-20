@@ -17,9 +17,9 @@ class SensorData(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     moisture_level = Column(Integer, nullable=False)
-    water_level = Column(Integer, nullable=False)
+    humidity = Column(Integer, nullable=False)
     recorded_at = Column(DateTime, nullable=False)
-    temperature: Column[float | None] = Column(Float, nullable=True)
+    temperature: Column[float] = Column(Float, nullable=False)
 
     sensor_id = Column(Integer, ForeignKey("sensor.id"), nullable=False)
 
@@ -49,7 +49,7 @@ class PumpHistory(Base):
     __tablename__ = "pump_history"
 
     id = Column(Integer, primary_key=True, index=True)
-    liters = Column(Float, nullable=False)
+    liters: Column[float] = Column(Float, nullable=False)
     recorded_at = Column(DateTime, nullable=False)
 
     pump_id = Column(Integer, ForeignKey("pump.id"), nullable=True)

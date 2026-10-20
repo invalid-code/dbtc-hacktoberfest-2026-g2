@@ -3,42 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/widgets/formatting.dart';
 
-class ConditionsCard extends StatefulWidget {
-  const ConditionsCard({super.key, this.snapshot});
+class ConditionsCard extends StatelessWidget {
+  const ConditionsCard({super.key, this.snapshot, this.todayUsageLiters});
 
   final GreenhouseSnapshot? snapshot;
-
-  @override
-  State<ConditionsCard> createState() => _ConditionsCardState();
-}
-
-class _ConditionsCardState extends State<ConditionsCard> {
-  final api = GreenhouseApi();
-  double? todayUsageLiters;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final liters = await api.loadTodayWaterUsage();
-      if (mounted) setState(() => todayUsageLiters = liters);
-    } catch (_) {}
-  }
-
-  @override
-  void dispose() {
-    api.dispose();
-    super.dispose();
-  }
+  final double? todayUsageLiters;
 
   @override
   Widget build(BuildContext context) {
-    final snapshot = widget.snapshot;
-    final usage = todayUsageLiters;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -67,50 +39,77 @@ class _ConditionsCardState extends State<ConditionsCard> {
             ],
           ),
           const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (context, constraints) => GridView.count(
-              crossAxisCount: constraints.maxWidth > 700
-                  ? 4
-                  : constraints.maxWidth > 420
-                  ? 2
-                  : 1,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              childAspectRatio: 1.5,
-              children: [
-                _MetricCard(
-                  label: "Today's water usage",
-                  value: usage == null ? '—' : formatLiters(usage),
-                ),
-                _MetricCard(
-                  label: 'Soil Moisture',
-                  value: '${snapshot?.sensor?.moisture ?? 45}%',
-                ),
-                _MetricCard(
-                  label: 'Humidity',
-                  value: '${snapshot?.sensor?.waterLevel ?? 45}%',
-                ),
-                _MetricCard(
-                  label: 'Temperature',
-                  value: _formatTemperature(snapshot?.sensor?.temperature),
-                ),
-              ],
+          if (snapshot?.sensor == null)
+            const SizedBox(
+              height: 180,
+              child: Center(child: _EmptySensor()),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) => GridView.count(
+                crossAxisCount: constraints.maxWidth > 700
+                    ? 4
+                    : constraints.maxWidth > 420
+                    ? 2
+                    : 1,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+                childAspectRatio: 1.5,
+                children: [
+                  _MetricCard(
+                    label: "Today's water usage",
+                    value: todayUsageLiters == null
+                        ? '—'
+                        : formatLiters(todayUsageLiters!),
+                  ),
+                  _MetricCard(
+                    label: 'Soil Moisture',
+                    value: '${snapshot?.sensor?.moisture ?? 45}%',
+                  ),
+                  _MetricCard(
+                    label: 'Humidity',
+                    value: '${snapshot?.sensor?.waterLevel ?? 45}%',
+                  ),
+                  _MetricCard(
+                    label: 'Temperature',
+                    value: _formatTemperature(snapshot?.sensor?.temperature),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              'Last updated · ${formatRecordedAt(snapshot?.sensor?.recordedAt)}',
-              style: const TextStyle(color: Colors.black54, fontSize: 13),
+          if (snapshot?.sensor != null) ...[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Last updated · ${formatRecordedAt(snapshot?.sensor?.recordedAt)}',
+                style: const TextStyle(color: Colors.black54, fontSize: 13),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
+}
+
+class _EmptySensor extends StatelessWidget {
+  const _EmptySensor();
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: const [
+      Icon(Icons.sensors_off_outlined, size: 34, color: Colors.black54),
+      SizedBox(height: 8),
+      Text(
+        'No sensor readings yet',
+        style: TextStyle(color: Colors.black54),
+      ),
+    ],
+  );
 }
 
 class _MetricCard extends StatelessWidget {
