@@ -2,10 +2,11 @@
 
 #include <WiFi.h>
 #include <WebSocketsClient.h>
+#include <WebServer.h>
 #include <ArduinoJson.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
+// #include <stdio.h>
+// #include <string.h>
+// #include <stdlib.h>
 #include "DHT.h"
 #include <HTTPClient.h>
 
@@ -22,6 +23,7 @@ DHT tempSensor2(DHTPIN2, DHTTYPE);
 DHT tempSensor3(DHTPIN3, DHTTYPE);
 
 WebSocketsClient webSocket;
+WebServer deviceServer(80);
 
 enum OperatingMode {
   FAST,
@@ -46,28 +48,54 @@ const int MOISTURE_HIGH_VAL = 2800;
 const int WATER_LEVEL_LOW_VAL = 0;
 const int WATER_LEVEL_HIGH_VAL = 1400;
 
-const int PUMP_MODE_CONTROL = 0;
-const int PUMP_ACTIVATE_CONTROL = 1;
-
 int curMode1 = FAST;
 int curMode2 = FAST;
 int curMode3 = FAST;
 
-void setPumpMode(int* pump, int pumpMode) {
-  switch (pumpMode) {
-    case 0:
-      *pump = FAST;
-      break;
-    case 1:
-      *pump = SLOW;
-      break;
-    case 2:
-      *pump = DRIP;
-      break;
-    case 3:
-      *pump = SPRINKLE;
-      break;
+const char* modeName(int mode) {
+  switch (mode) {
+    case SLOW:
+      return "SLOW";
+    case DRIP:
+      return "DRIP";
+    case SPRINKLE:
+      return "SPRINKLE";
+    default:
+      return "FAST";
   }
+}
+
+int modeFromName(const String& name) {
+  if (name.equalsIgnoreCase("SLOW")) return SLOW;
+  if (name.equalsIgnoreCase("DRIP")) return DRIP;
+  if (name.equalsIgnoreCase("SPRINKLE")) return SPRINKLE;
+  return FAST;
+}
+
+// the slot holding the mode a pump is currently running in
+int* modeSlotFor(int pumpId) {
+  switch (pumpId) {
+    case 1:
+      return &curMode1;
+    case 2:
+      return &curMode2;
+    case 3:
+      return &curMode3;
+  }
+  return nullptr;
+}
+
+// the gpio pin driving a pump
+int pumpPinFor(int pumpId) {
+  switch (pumpId) {
+    case 1:
+      return PUMP1_PIN;
+    case 2:
+      return PUMP2_PIN;
+    case 3:
+      return PUMP3_PIN;
+  }
+  return -1;
 }
 
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
@@ -81,60 +109,9 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
       break;
 
     case WStype_TEXT:
-      Serial.printf("Received pump mode: %s\n", payload);
-
-      {
-        JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, payload, length);
-
-        if (error) {
-          Serial.print("deserializeJson() failed: ");
-          Serial.println(error.c_str());
-          return;
-        }
-
-        int pumpControl = doc["pump_control"];
-        int pump = doc["pump"];
-        switch (pumpControl) {
-          case PUMP_MODE_CONTROL:
-            {
-              int pumpMode = doc["pump_mode"];
-              int* curMode;
-
-              switch (pump) {
-                case 1:
-                  curMode = &curMode1;
-                  break;
-                case 2:
-                  curMode = &curMode2;
-                  break;
-                case 3:
-                  curMode = &curMode3;
-                  break;
-              }
-              setPumpMode(curMode, pumpMode);
-              break;
-            }
-          case PUMP_ACTIVATE_CONTROL:
-            // for now only activate based on cur mode of a pump
-            {
-              int curMode = 0;
-              switch (pump) {
-                case 1:
-                  curMode = curMode1;
-                  break;
-                case 2:
-                  curMode = curMode2;
-                  break;
-                case 3:
-                  curMode = curMode3;
-                  break;
-              }
-              openPump(PUMP_ACTIVATE_CONTROL, 0, 0, 0, pump, curMode);
-              break;
-            }
-        }
-      }
+      // the socket is only used to publish sensor readings, commands arrive
+      // over the http server instead
+      Serial.printf("Received: %s\n", payload);
       break;
 
     case WStype_BIN:
@@ -148,23 +125,81 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
-void sendPumpWaterUsage(int pump, float waterUsage) {
-  if (WiFi.status() == WL_CONNECTED) {
-    WiFiClient client;
-    HTTPClient http;
+// GET /mode -> the mode every pump is currently running in
+void handleGetMode() {
+  String json = "{\"modes\":{";
+  json += "\"1\":\"" + String(modeName(curMode1)) + "\",";
+  json += "\"2\":\"" + String(modeName(curMode2)) + "\",";
+  json += "\"3\":\"" + String(modeName(curMode3)) + "\"";
+  json += "}}";
+  deviceServer.send(200, "application/json", json);
+}
 
-    size_t serverUrlStrLen = strlen(SERVER_URL);
-    size_t pumpHistoryStrLen = strlen(PUMP_HISTORY_PATH);
-    char* serverStr = (char*)malloc((serverUrlStrLen + pumpHistoryStrLen) * sizeof(char));
-    sprintf(serverStr, "%s%s", SERVER_URL, PUMP_HISTORY_PATH);
+// POST /mode -> switch a pump to the requested mode
+void handlePostMode() {
+  int pumpId = 0;
+  int mode = FAST;
+  bool parsed = false;
 
-    http.begin(client, serverStr);
-    http.addHeader("Content-Type", "application/json");
-    char* httpRequestData = (char*)malloc(1);
-    int httpResponseCode = http.POST(httpRequestData);
-
-    Serial.println("Sent pump water usage data payload");
+  String body = deviceServer.arg("plain");
+  if (body.length() > 0) {
+    JsonDocument doc;
+    if (!deserializeJson(doc, body.c_str())) {
+      pumpId = doc["pump"] | 0;
+      const char* requested = doc["mode"] | "FAST";
+      mode = modeFromName(String(requested));
+      parsed = true;
+    }
   }
+
+  if (!parsed) {
+    if (!deviceServer.hasArg("pump") || !deviceServer.hasArg("mode")) {
+      deviceServer.send(
+          400, "application/json", "{\"error\":\"pump and mode are required\"}");
+      return;
+    }
+    pumpId = deviceServer.arg("pump").toInt();
+    mode = modeFromName(deviceServer.arg("mode"));
+  }
+
+  int* slot = modeSlotFor(pumpId);
+  if (slot == nullptr) {
+    deviceServer.send(404, "application/json", "{\"error\":\"unknown pump\"}");
+    return;
+  }
+
+  *slot = mode;
+  Serial.printf("Pump %d switched to %s\n", pumpId, modeName(mode));
+
+  String json = "{\"pump\":" + String(pumpId) + ",\"mode\":\"" +
+                String(modeName(mode)) + "\"}";
+  deviceServer.send(200, "application/json", json);
+}
+
+void sendPumpWaterUsage(int pumpId, float waterUsage) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  WiFiClient client;
+  HTTPClient http;
+
+  String url = String(SERVER_URL) + String(PUMP_HISTORY_PATH);
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+
+  char usageStr[16];
+  snprintf(usageStr, sizeof(usageStr), "%.2f", waterUsage);
+
+  String body = "{\"pump\":" + String(pumpId) + ",\"liters\":" + String(usageStr) + "}";
+  int httpResponseCode = http.POST(body);
+
+  if (httpResponseCode > 0) {
+    Serial.printf("Sent pump water usage for pump %d\n", pumpId);
+  } else {
+    Serial.printf("Failed to send pump water usage: %d\n", httpResponseCode);
+  }
+  http.end();
 }
 
 void fast(int pumpPin) {
@@ -200,7 +235,7 @@ void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, floa
     doc["sensor"] = sensor;
     doc["moisture_level"] = moisturePercent;
     doc["temperature"] = tempSensorValue;
-    doc["humidity"] = tempSensorValue;
+    doc["humidity"] = humiditySensorValue;
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -209,34 +244,29 @@ void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, floa
   }
 }
 
-void activatePumpMode(int pump, int curMode) {
+void activatePumpMode(int pumpId, int pumpPin, int curMode) {
   switch (curMode) {
     case FAST:
-      fast(pump);
+      fast(pumpPin);
       break;
     case SLOW:
-      slow(pump);
+      slow(pumpPin);
       break;
     case DRIP:
-      drip(pump);
+      drip(pumpPin);
       break;
     case SPRINKLE:
-      sprinkle(pump);
+      sprinkle(pumpPin);
       break;
   }
-  sendPumpWaterUsage(pump);
+  sendPumpWaterUsage(pumpId, 0.0);
 }
 
-void openPump(int pumpControl, int moisturePercent, float tempValue, float humidityValue, int pump, int curMode) {
-  // on the occasion that the conditions should allow for both to activate prioritize the PUMP_ACTIVATE_CONTROL
-  if (pumpControl == PUMP_ACTIVATE_CONTROL) {
-    activatePumpMode(pump, curMode);
-  } else {
-    if (moisturePercent <= 30 && tempValue > 30.0 && humidityValue > 70.0) {
-      activatePumpMode(pump, curMode);
-    } else if (moisturePercent <= 30) {
-      activatePumpMode(pump, curMode);
-    }
+void openPump(int pumpId, int moisturePercent, float tempValue, float humidityValue, int curMode) {
+  if (moisturePercent <= 30 && tempValue > 30.0 && humidityValue > 70.0) {
+    activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
+  } else if (moisturePercent <= 30) {
+    activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
   }
 }
 
@@ -256,6 +286,11 @@ void setup() {
   webSocket.begin(SERVER_URL, SERVER_PORT, WS_PATH);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
+
+  deviceServer.on("/mode", HTTP_GET, handleGetMode);
+  deviceServer.on("/mode", HTTP_POST, handlePostMode);
+  deviceServer.begin();
+  Serial.println("Pump mode server listening");
 
   tempSensor1.begin();
   tempSensor2.begin();
@@ -278,6 +313,7 @@ void setup() {
 
 void loop() {
   webSocket.loop();
+  deviceServer.handleClient();
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Wi-Fi disconnected. Reconnecting...");
@@ -311,7 +347,7 @@ void loop() {
     Serial.println(humiditySensor1Value);
 
     sendSensorData(1, moisture1Percent, tempSensor1Value, humiditySensor1Value);                 // TODO need to make magic value for sensor numbers
-    openPump(0, moisture1Percent, tempSensor1Value, humiditySensor1Value, PUMP1_PIN, curMode1);  // not PUMP_ACTIVATE_CONTROL
+    openPump(1, moisture1Percent, tempSensor1Value, humiditySensor1Value, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
     int moisture2Percent = map(moisture2Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
@@ -330,7 +366,7 @@ void loop() {
     Serial.println(humiditySensor2Value);
 
     sendSensorData(2, moisture2Percent, tempSensor2Value, humiditySensor2Value);                 // TODO need to make magic value for sensor numbers
-    openPump(0, moisture2Percent, tempSensor2Value, humiditySensor2Value, PUMP2_PIN, curMode2);  // not PUMP_ACTIVATE_CONTROL
+    openPump(2, moisture2Percent, tempSensor2Value, humiditySensor2Value, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
     int moisture3Percent = map(moisture3Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
@@ -349,6 +385,6 @@ void loop() {
     Serial.println(humiditySensor3Value);
 
     sendSensorData(3, moisture3Percent, tempSensor3Value, humiditySensor3Value);                 // TODO need to make magic value for sensor numbers
-    openPump(0, moisture3Percent, tempSensor3Value, humiditySensor3Value, PUMP3_PIN, curMode3);  // not PUMP_ACTIVATE_CONTROL
+    openPump(3, moisture3Percent, tempSensor3Value, humiditySensor3Value, curMode3);
   }
 }

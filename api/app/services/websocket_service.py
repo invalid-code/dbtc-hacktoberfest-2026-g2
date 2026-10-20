@@ -23,18 +23,6 @@ async def broadcast_sensor_data(sensor_data: SensorData) -> None:
     active_websockets.difference_update(disconnected)
 
 
-async def broadcast_pump_mode(pump_id: int, pump_mode: int) -> None:
-    disconnected: list[WebSocket] = []
-    for client in active_websockets:
-        try:
-            await client.send_json(
-                {"pump": pump_id, "pump_mode": pump_mode}
-            )
-        except Exception:
-            disconnected.append(client)
-    active_websockets.difference_update(disconnected)
-
-
 async def connect(websocket: WebSocket) -> None:
     await websocket.accept()
     active_websockets.add(websocket)

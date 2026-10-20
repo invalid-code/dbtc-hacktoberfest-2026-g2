@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import AsyncSessionLocal, Base, engine
 from app.routers import alert_router, pump_router, sensor_router, websocket_router
-from app.services import pump_service
+from app.services import device_service, pump_service
 
 
 def allowed_origins() -> list[str]:
@@ -20,7 +22,18 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
         await pump_service.ensure_pumps(db)
+        await pump_service.ensure_pump_modes(db)
+
+    poll_task = None
+    if device_service.device_configured():
+        poll_task = asyncio.create_task(device_service.poll_loop())
     yield
+    if poll_task:
+        poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(lifespan=lifespan)

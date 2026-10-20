@@ -40,6 +40,8 @@ class PumpMode(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     mode = Column(Integer, nullable=False)
+    observed_mode = Column(Integer, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
 
     pump_id = Column(Integer, ForeignKey("pump.id"), nullable=False, unique=True)
     pump = relationship("Pump", back_populates="pump_mode")

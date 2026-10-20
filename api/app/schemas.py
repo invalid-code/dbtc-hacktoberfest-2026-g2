@@ -48,6 +48,8 @@ class PumpResponse(BaseModel):
 class PumpModeResponse(BaseModel):
     id: int
     mode: int
+    observed_mode: int | None
+    last_seen_at: datetime | None
     pump_id: int
 
     model_config = {"from_attributes": True}

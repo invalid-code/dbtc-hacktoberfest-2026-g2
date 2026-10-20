@@ -29,9 +29,9 @@ class GreenhouseApi {
 
   Future<GreenhouseSnapshot> loadSnapshot() async {
     final responses = await Future.wait([
-      _get('/sensor-data/'),
+      _get('/sensor/data/'),
       _get('/pump/'),
-      _get('/pump-mode/'),
+      _get('/pump/mode/'),
     ]);
     final sensors =
         (responses[0] as List)
@@ -63,7 +63,7 @@ class GreenhouseApi {
   }
 
   Future<List<SensorReading>> loadSensorReadings() async {
-    final response = await _get('/sensor-data/');
+    final response = await _get('/sensor/data/');
     final readings =
         (response as List)
             .whereType<Map<String, dynamic>>()
@@ -78,8 +78,16 @@ class GreenhouseApi {
     return readings;
   }
 
+  Future<void> updatePumpMode(int pump, int pumpMode) async {
+    await _request(
+      '/pump/mode/',
+      method: 'PUT',
+      body: {'pump': pump, 'pump_mode': pumpMode},
+    );
+  }
+
   Future<List<PumpHistoryEntry>> loadPumpHistory() async {
-    final response = await _get('/pump-history/');
+    final response = await _get('/pump/history/');
     return (response as List)
         .whereType<Map<String, dynamic>>()
         .map(PumpHistoryEntry.fromJson)
@@ -87,7 +95,7 @@ class GreenhouseApi {
   }
 
   Future<double> loadTodayWaterUsage() async {
-    final response = await _get('/usage/today/');
+    final response = await _get('/pump/usage/today');
     return (response['liters'] as num?)?.toDouble() ?? 0;
   }
 
@@ -107,6 +115,26 @@ class GreenhouseApi {
       throw Exception('GET $path failed: ${response.statusCode}');
     }
     return jsonDecode(response.body);
+  }
+
+  Future<void> _request(
+    String path, {
+    required String method,
+    required Map<String, dynamic> body,
+  }) async {
+    final uri = Uri.parse('$apiBaseUrl$path');
+    final response = method == 'PUT'
+        ? await _client
+              .put(
+                uri,
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(body),
+              )
+              .timeout(const Duration(seconds: 3))
+        : throw UnsupportedError(method);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('$method $path failed: ${response.statusCode}');
+    }
   }
 
   void dispose() {

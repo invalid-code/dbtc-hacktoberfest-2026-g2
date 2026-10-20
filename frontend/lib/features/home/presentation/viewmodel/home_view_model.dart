@@ -77,6 +77,9 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updatePumpMode(int pump, int mode) =>
+      _api.updatePumpMode(pump, mode);
+
   static List<double> monthlyUsageFrom(List<PumpHistoryEntry> entries) {
     final year = DateTime.now().year;
     final totals = List<double>.filled(12, 0);

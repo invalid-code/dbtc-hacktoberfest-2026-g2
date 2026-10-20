@@ -21,6 +21,13 @@ async def get_pump_modes(db: AsyncSession) -> list[PumpMode]:
     return await pump_repo.get_all_pump_modes(db)
 
 
+async def ensure_pump_modes(
+    db: AsyncSession,
+    pump_ids: tuple[int, ...] = (1, 2, 3),
+) -> None:
+    await pump_repo.ensure_pump_modes(db, pump_ids)
+
+
 async def update_pump_mode(
     db: AsyncSession,
     pump_id: int,

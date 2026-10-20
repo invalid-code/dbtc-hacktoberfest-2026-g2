@@ -123,14 +123,17 @@ class _HomeViewState extends State<HomeView> {
                                     PumpCard(
                                       name: 'Water Pump #1',
                                       pumpId: _viewModel.pumpIdFor(0),
+                                      onModeChanged: _viewModel.updatePumpMode,
                                     ),
                                     PumpCard(
                                       name: 'Water Pump #2',
                                       pumpId: _viewModel.pumpIdFor(1),
+                                      onModeChanged: _viewModel.updatePumpMode,
                                     ),
                                     PumpCard(
                                       name: 'Water Pump #3',
                                       pumpId: _viewModel.pumpIdFor(2),
+                                      onModeChanged: _viewModel.updatePumpMode,
                                     ),
                                   ],
                                 ),

@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Pump, PumpHistory, PumpMode
+from app.modes import MODE_INDEX, PumpModeName, mode_index_from_name
 
 
 async def get_all_pumps(db: AsyncSession) -> list[Pump]:
@@ -50,6 +51,43 @@ async def create_or_update_pump_mode(
     await db.commit()
     await db.refresh(db_pump_mode)
     return db_pump_mode
+
+
+async def ensure_pump_modes(
+    db: AsyncSession,
+    pump_ids: tuple[int, ...] = (1, 2, 3),
+) -> None:
+    for pump_id in pump_ids:
+        await get_or_create_pump(db, pump_id)
+        if await get_pump_mode_by_pump_id(db, pump_id) is None:
+            db.add(PumpMode(pump_id=pump_id, mode=MODE_INDEX[PumpModeName.FAST.name]))
+    await db.commit()
+
+
+async def record_observed_mode(
+    db: AsyncSession,
+    pump_id: int,
+    observed_mode: int,
+) -> PumpMode | None:
+    db_pump_mode = await get_pump_mode_by_pump_id(db, pump_id)
+    if db_pump_mode is None:
+        return None
+    db_pump_mode.observed_mode = observed_mode
+    db_pump_mode.last_seen_at = datetime.now()
+    await db.commit()
+    await db.refresh(db_pump_mode)
+    return db_pump_mode
+
+
+async def record_observed_modes(
+    db: AsyncSession,
+    observed: dict[int, str],
+) -> None:
+    for pump_id, name in observed.items():
+        index = mode_index_from_name(name)
+        if index is None:
+            continue
+        await record_observed_mode(db, pump_id=pump_id, observed_mode=index)
 
 
 async def get_pump_history(db: AsyncSession) -> list[PumpHistory]:

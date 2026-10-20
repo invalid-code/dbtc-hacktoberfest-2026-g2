@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
 class PumpCard extends StatefulWidget {
-  const PumpCard({super.key, required this.name, required this.pumpId});
+  const PumpCard({
+    super.key,
+    required this.name,
+    required this.pumpId,
+    this.onModeChanged,
+  });
 
   final String name;
   final int pumpId;
+  final Future<void> Function(int pumpId, int mode)? onModeChanged;
 
   @override
   State<PumpCard> createState() => _PumpCardState();
@@ -44,9 +50,12 @@ class _PumpCardState extends State<PumpCard> {
                     DropdownMenuItem(value: value, child: Text('Mode: $value')),
               )
               .toList(),
-          onChanged: (value) {
+          onChanged: (value) async {
             final next = value ?? mode;
             setState(() => mode = next);
+            try {
+              await widget.onModeChanged?.call(widget.pumpId, _modeValue(next));
+            } catch (_) {}
           },
         ),
         const Spacer(),
@@ -68,4 +77,7 @@ class _PumpCardState extends State<PumpCard> {
       ],
     ),
   );
+
+  int _modeValue(String value) =>
+      ['Fast', 'Slow', 'Drip', 'Sprinkle'].indexOf(value);
 }

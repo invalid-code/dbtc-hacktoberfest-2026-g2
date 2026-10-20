@@ -10,7 +10,7 @@ from app.schemas import (
     PumpResponse,
     TodayUsageResponse,
 )
-from app.services import pump_service, websocket_service
+from app.services import pump_service
 
 router = APIRouter(prefix="/pump", tags=["pump"])
 
@@ -30,9 +30,7 @@ async def update_pump_mode(
     body: PumpModeRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    pump_mode = await pump_service.update_pump_mode(db, body.pump, body.pump_mode)
-    await websocket_service.broadcast_pump_mode(pump_mode.pump_id, pump_mode.mode)
-    return pump_mode
+    return await pump_service.update_pump_mode(db, body.pump, body.pump_mode)
 
 
 @router.get("/history/", response_model=list[PumpHistoryResponse])
