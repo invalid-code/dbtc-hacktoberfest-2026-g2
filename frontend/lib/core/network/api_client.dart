@@ -1,76 +1,19 @@
 import 'dart:convert';
 
+import 'package:frontend/features/history/data/pump_history_entry.dart';
+import 'package:frontend/features/sensors/data/sensor_reading.dart';
+import 'package:frontend/model/alert.dart';
+import 'package:frontend/model/pump_info.dart';
 import 'package:http/http.dart' as http;
 
-final apiBaseUrl = String.fromEnvironment(
+const _apiBaseUrlRaw = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'http://localhost:8000',
-).replaceFirst(RegExp(r'/$'), '');
+);
 
-class SensorReading {
-  const SensorReading({
-    required this.moisture,
-    required this.waterLevel,
-    required this.recordedAt,
-  });
-
-  final int moisture;
-  final int waterLevel;
-  final DateTime? recordedAt;
-
-  factory SensorReading.fromJson(Map<String, dynamic> json) => SensorReading(
-    moisture: (json['moisture_level'] as num?)?.toInt() ?? 0,
-    waterLevel: (json['water_level'] as num?)?.toInt() ?? 0,
-    recordedAt: json['recorded_at'] == null
-        ? null
-        : DateTime.tryParse(json['recorded_at'] as String),
-  );
-}
-
-class PumpInfo {
-  const PumpInfo({required this.id, required this.mode});
-
-  final int id;
-  final int? mode;
-
-  factory PumpInfo.fromJson(Map<String, dynamic> json) => PumpInfo(
-    id: (json['id'] as num).toInt(),
-    mode: (json['mode'] as num?)?.toInt(),
-  );
-}
-
-class PumpHistoryEntry {
-  const PumpHistoryEntry({
-    required this.pump,
-    required this.liters,
-    required this.recordedAt,
-  });
-
-  final int? pump;
-  final double liters;
-  final DateTime? recordedAt;
-
-  factory PumpHistoryEntry.fromJson(Map<String, dynamic> json) =>
-      PumpHistoryEntry(
-        pump: (json['pump_id'] as num?)?.toInt(),
-        liters: (json['liters'] as num?)?.toDouble() ?? 0,
-        recordedAt: json['recorded_at'] == null
-            ? null
-            : DateTime.tryParse(json['recorded_at'] as String),
-      );
-}
-
-class Alert {
-  const Alert({required this.message, required this.severity});
-
-  final String message;
-  final String severity;
-
-  factory Alert.fromJson(Map<String, dynamic> json) => Alert(
-    message: (json['message'] as String?) ?? '',
-    severity: (json['severity'] as String?) ?? 'warning',
-  );
-}
+final apiBaseUrl = _apiBaseUrlRaw.endsWith('/')
+    ? _apiBaseUrlRaw.substring(0, _apiBaseUrlRaw.length - 1)
+    : _apiBaseUrlRaw;
 
 class GreenhouseSnapshot {
   const GreenhouseSnapshot({required this.sensor, required this.pumps});

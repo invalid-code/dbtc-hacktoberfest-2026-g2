@@ -19,6 +19,7 @@ class SensorData(Base):
     moisture_level = Column(Integer, nullable=False)
     water_level = Column(Integer, nullable=False)
     recorded_at = Column(DateTime, nullable=False)
+    temperature: Column[float | None] = Column(Float, nullable=True)
 
     sensor_id = Column(Integer, ForeignKey("sensor.id"), nullable=False)
 

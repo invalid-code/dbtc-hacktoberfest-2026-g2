@@ -8,6 +8,7 @@ class SensorDataRequest(BaseModel):
     moisture_level: int
     water_level: int
     recorded_at: datetime | None = None
+    temperature: float | None = None
 
 
 class PumpModeRequest(BaseModel):

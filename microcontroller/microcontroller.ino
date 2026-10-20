@@ -2,15 +2,19 @@
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <stdlib.h>
+#include "DHT.h"
 
 #include "secrets.h"
 
-IPAddress local_IP(192, 168, 1, 184);
-IPAddress gateway(192, 168, 1, 1);
-IPAddress subnet(255, 255, 255, 0);
+#define DHTPIN1 4
+#define DHTPIN2 16
+#define DHTPIN3 17
 
-IPAddress primaryDNS(1, 1, 1, 1);
-IPAddress secondaryDNS(1, 0, 0, 1);
+#define DHTTYPE DHT11
+
+DHT tempSensor1(DHTPIN1, DHTTYPE);
+DHT tempSensor2(DHTPIN2, DHTTYPE);
+DHT tempSensor3(DHTPIN3, DHTTYPE);
 
 WebSocketsClient webSocket;
 
@@ -25,12 +29,12 @@ const int PUMP1_PIN = 25;
 const int PUMP2_PIN = 26;
 const int PUMP3_PIN = 27;
 
-const int MOISTURE_PIN_1 = 34;
-const int WATER_LEVEL_PIN_1 = 35;
-const int MOISTURE_PIN_2 = 32;
-const int WATER_LEVEL_PIN_2 = 33;
-const int MOISTURE_PIN_3 = 36;
-const int WATER_LEVEL_PIN_3 = 39;
+const int MOISTURE_PIN_1 = 36;
+const int WATER_LEVEL_PIN_1 = 39;
+const int MOISTURE_PIN_2 = 35;
+const int WATER_LEVEL_PIN_2 = 32;
+const int MOISTURE_PIN_3 = 25;
+const int WATER_LEVEL_PIN_3 = 26;
 
 const int MOISTURE_LOW_VAL = 0;
 const int MOISTURE_HIGH_VAL = 2800;
@@ -136,12 +140,13 @@ void sprinkle(int pumpPin) {
   Serial.println("-- Sprinkle Flow Mode --");
 }
 
-void sendSensorData(int sensor, int moisturePercent, int waterLevelPercent) {
+void sendSensorData(int sensor, int moisturePercent, int waterLevelPercent, float tempSensorValue) {
   if (WiFi.status() == WL_CONNECTED) {
     JsonDocument doc;
     doc["sensor"] = sensor;
     doc["moisture_level"] = moisturePercent;
     doc["water_level"] = waterLevelPercent;
+    doc["temperature"] = tempSensorValue;
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -187,6 +192,11 @@ void setup() {
   webSocket.begin(SERVER_URL, SERVER_PORT, WS_PATH);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
+
+  tempSensor1.begin();
+  tempSensor2.begin();
+  tempSensor3.begin();
+
 
   pinMode(PUMP1_PIN, OUTPUT);
   pinMode(PUMP2_PIN, OUTPUT);
@@ -235,7 +245,11 @@ void loop() {
     Serial.print("Water level 1 percentage: ");
     Serial.println(waterLevel1Percent);
 
-    sendSensorData(1, moisture1Percent, waterLevel1Percent);
+    float tempSensor1Value = tempSensor1.readTemperature();
+    Serial.print("Temperature 1 raw: ");
+    Serial.println(tempSensor1Value);
+
+    sendSensorData(1, moisture1Percent, waterLevel1Percent, tempSensor1Value);
     openPump(moisture1Percent, waterLevel1Percent, PUMP1_PIN, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
@@ -254,7 +268,11 @@ void loop() {
     Serial.print("Water level 2 percentage: ");
     Serial.println(waterLevel2Percent);
 
-    sendSensorData(2, moisture2Percent, waterLevel2Percent);
+    float tempSensor2Value = tempSensor2.readTemperature();
+    Serial.print("Temperature 2 raw: ");
+    Serial.println(tempSensor2Value);
+
+    sendSensorData(2, moisture2Percent, waterLevel2Percent, tempSensor2Value);
     openPump(moisture2Percent, waterLevel2Percent, PUMP2_PIN, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
@@ -273,7 +291,11 @@ void loop() {
     Serial.print("Water level 3 percentage: ");
     Serial.println(waterLevel3Percent);
 
-    sendSensorData(3, moisture3Percent, waterLevel3Percent);
+    float tempSensor3Value = tempSensor3.readTemperature();
+    Serial.print("Temperature 3 raw: ");
+    Serial.println(tempSensor3Value);
+
+    sendSensorData(3, moisture3Percent, waterLevel3Percent, tempSensor3Value);
     openPump(moisture3Percent, waterLevel3Percent, PUMP3_PIN, curMode3);
   }
 }

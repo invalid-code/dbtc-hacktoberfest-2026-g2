@@ -1,3 +1,5 @@
+import asyncio
+import math
 from datetime import datetime, timedelta
 
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
@@ -8,7 +10,8 @@ from sqlalchemy.future import select
 
 from app.database import AsyncSessionLocal, Base, engine, get_db
 from app.models import Pump, PumpHistory, PumpMode, Sensor, SensorData
-from app.schemas import PumpHistoryRequest, PumpModeRequest, SensorDataRequest
+from app.schemas import PumpModeRequest, SensorDataRequest
+
 from .config import settings
 
 app = FastAPI()
@@ -18,6 +21,7 @@ active_websockets: set[WebSocket] = set()
 def allowed_origins() -> list[str]:
     origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",")]
     return [origin for origin in origins if origin]
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +40,8 @@ async def startup():
         for pump_id in (1, 2, 3):
             await ensure_pump(db, pump_id)
         await db.commit()
+    if settings.SIMULATE_SENSORS:
+        asyncio.create_task(simulate_sensors())
 
 
 @app.get("/health")
@@ -61,18 +67,63 @@ async def ensure_pump(db: AsyncSession, pump_id: int) -> Pump:
     return pump
 
 
+def generate_temperature(recorded_at: datetime) -> float:
+    hour = recorded_at.hour + recorded_at.minute / 60 + recorded_at.second / 3600
+    return round(24 + 8 * math.sin(2 * math.pi * (hour - 9) / 24), 1)
+
+
 async def save_sensor_data(body: SensorDataRequest, db: AsyncSession) -> SensorData:
     await ensure_sensor(db, body.sensor)
+    recorded_at = body.recorded_at or datetime.now()
     new_sensor_data = SensorData(
         sensor_id=body.sensor,
         moisture_level=body.moisture_level,
         water_level=body.water_level,
-        recorded_at=body.recorded_at or datetime.now(),
+        recorded_at=recorded_at,
+        temperature=body.temperature
+        if body.temperature is not None
+        else generate_temperature(recorded_at),
     )
     db.add(new_sensor_data)
     await db.commit()
     await db.refresh(new_sensor_data)
     return new_sensor_data
+
+
+async def broadcast_sensor_data(sensor_data: SensorData) -> None:
+    disconnected: list[WebSocket] = []
+    for client in active_websockets:
+        try:
+            await client.send_json(
+                {
+                    "sensor": sensor_data.sensor_id,
+                    "moisture_level": sensor_data.moisture_level,
+                    "water_level": sensor_data.water_level,
+                    "temperature": sensor_data.temperature,
+                    "recorded_at": sensor_data.recorded_at.isoformat(),
+                }
+            )
+        except Exception:
+            disconnected.append(client)
+    active_websockets.difference_update(disconnected)
+
+
+async def simulate_sensors() -> None:
+    async with AsyncSessionLocal() as db:
+        tick = 0
+        while True:
+            await asyncio.sleep(settings.SIMULATE_INTERVAL_SECONDS)
+            recorded_at = datetime.now()
+            body = SensorDataRequest(
+                sensor=1,
+                moisture_level=int(55 + 15 * math.sin(tick / 7)),
+                water_level=int(55 + 20 * math.sin(tick / 11 + 1)),
+                recorded_at=recorded_at,
+                temperature=generate_temperature(recorded_at),
+            )
+            new_sensor_data = await save_sensor_data(body, db)
+            await broadcast_sensor_data(new_sensor_data)
+            tick += 1
 
 
 @app.get("/sensor/")
@@ -157,24 +208,18 @@ async def get_alerts(db: AsyncSession = Depends(get_db)):
     latest = result.scalars().first()
     if latest is None:
         return {
-            "alerts": [
-                {"message": "No sensor readings yet", "severity": "warning"}
-            ]
+            "alerts": [{"message": "No sensor readings yet", "severity": "warning"}]
         }
 
-    alerts = []
+    alerts: list[dict[str, str]] = []
     if latest.water_level <= 20:
         alerts.append(
             {"message": "Check water level in reservoir", "severity": "critical"}
         )
     if latest.moisture_level <= 30:
-        alerts.append(
-            {"message": "Soil moisture is low", "severity": "warning"}
-        )
+        alerts.append({"message": "Soil moisture is low", "severity": "warning"})
     if datetime.now() - latest.recorded_at > timedelta(minutes=30):
-        alerts.append(
-            {"message": "Sensor readings are stale", "severity": "warning"}
-        )
+        alerts.append({"message": "Sensor readings are stale", "severity": "warning"})
     return {"alerts": alerts}
 
 
@@ -190,22 +235,6 @@ async def get_today_usage(db: AsyncSession = Depends(get_db)):
     return {"liters": float(result.scalar_one())}
 
 
-# @app.post("/pump-history/")
-# async def create_pump_history(
-#     body: PumpHistoryRequest,
-#     db: AsyncSession = Depends(get_db),
-# ):
-#     db_pump_history = PumpHistory(
-#         liters=body.liters,
-#         recorded_at=body.recorded_at or datetime.now(),
-#         pump_id=body.pump,
-#     )
-#     db.add(db_pump_history)
-#     await db.commit()
-#     await db.refresh(db_pump_history)
-#     return db_pump_history
-
-
 @app.websocket("/mc-ws/")
 async def mc_ws(
     websocket: WebSocket,
@@ -217,7 +246,8 @@ async def mc_ws(
         while True:
             sensor_data = await websocket.receive_json()
             sensor_data_validated = SensorDataRequest.model_validate(sensor_data)
-            await save_sensor_data(sensor_data_validated, db)
+            new_sensor_data = await save_sensor_data(sensor_data_validated, db)
+            await broadcast_sensor_data(new_sensor_data)
     except WebSocketDisconnect:
         pass
     finally:
