@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+/// Height of the body of a dashboard panel, so panels keep the same size
+/// whatever they show.
+const panelContentHeight = 340.0;
+
 class Panel extends StatelessWidget {
   const Panel({super.key, 
     required this.title,
@@ -35,14 +39,17 @@ class Panel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              const Spacer(),
               ...?actions,
             ],
           ),

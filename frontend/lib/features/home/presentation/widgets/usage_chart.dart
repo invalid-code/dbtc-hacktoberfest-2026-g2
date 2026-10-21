@@ -14,7 +14,7 @@ class UsageChart extends StatelessWidget {
     return Panel(
       title: 'Water Usage History',
       child: SizedBox(
-        height: 340,
+        height: panelContentHeight,
         child: failed
             ? const Center(
                 child: Text(

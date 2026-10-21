@@ -45,6 +45,10 @@ class ConditionsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
+          if (snapshot?.sensor?.garbled == true) ...[
+            _SpookyBanner(),
+            const SizedBox(height: 14),
+          ],
           if (snapshot?.sensor == null)
             SizedBox(
               height: 180,
@@ -106,6 +110,31 @@ class ConditionsCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SpookyBanner extends StatelessWidget {
+  const _SpookyBanner();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: const Color(0xffeee2f7),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.auto_awesome, size: 18, color: Color(0xff6a1b9a)),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Text(
+            'These readings are haunted, the numbers cannot be trusted',
+            style: TextStyle(color: Color(0xff6a1b9a)),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _EmptySensor extends StatelessWidget {

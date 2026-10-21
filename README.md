@@ -38,13 +38,28 @@ the WebSocket endpoint `/mc-ws/` with this payload:
   "sensor": 1,
   "moisture_level": 42,
   "humidity": 78,
-  "temperature": 23.5
+  "temperature": 23.5,
+  "garbled": false
 }
 ```
 
 The API stores the readings and broadcasts them to the connected clients, so
 the frontend receives the same `moisture_level`, `humidity`, `temperature` and
 `recorded_at` fields over the WebSocket.
+
+## Halloween easter egg
+
+The microcontroller starts to play tricks as Halloween approaches. In the two
+weeks before the 31st of October it occasionally replaces a reading with
+garbled values, and the chance grows every day until it reaches 80% on
+Halloween night itself. Outside that window the sensors always report the real
+values.
+
+Garbled readings are flagged with `"garbled": true` so they can be told apart
+from the real ones. The API stores the flag, raises a spooky alert instead of
+the usual threshold alerts while a garbled reading is the latest one, and the
+app marks the readings as haunted. The microcontroller keeps using the real
+readings for the pump logic, so the greenhouse keeps watering itself.
 
 ## AI endpoints
 

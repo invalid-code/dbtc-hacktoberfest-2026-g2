@@ -46,7 +46,7 @@ class HistorySummary extends StatelessWidget {
 
     if (entries.isEmpty) {
       return const SizedBox(
-        height: 340,
+        height: panelContentHeight,
         child: Center(
           child: Text(
             'No water usage recorded yet',

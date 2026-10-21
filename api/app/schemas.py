@@ -9,6 +9,7 @@ class SensorDataRequest(BaseModel):
     humidity: int
     temperature: float
     recorded_at: datetime | None = None
+    garbled: bool = False
 
 
 class PumpModeRequest(BaseModel):
@@ -35,6 +36,7 @@ class SensorDataResponse(BaseModel):
     temperature: float
     recorded_at: datetime
     sensor_id: int
+    garbled: bool
 
     model_config = {"from_attributes": True}
 

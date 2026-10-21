@@ -4,12 +4,17 @@ class SensorReading {
     required this.humidity,
     required this.recordedAt,
     this.temperature,
+    this.garbled = false,
   });
 
   final int moisture;
   final int humidity;
   final DateTime? recordedAt;
   final double? temperature;
+
+  /// The microcontroller garbles the readings as a halloween easter egg, these
+  /// readings must not be trusted.
+  final bool garbled;
 
   factory SensorReading.fromJson(Map<String, dynamic> json) => SensorReading(
     moisture: (json['moisture_level'] as num?)?.toInt() ?? 0,
@@ -18,5 +23,6 @@ class SensorReading {
         ? null
         : DateTime.tryParse(json['recorded_at'] as String? ?? ''),
     temperature: (json['temperature'] as num?)?.toDouble(),
+    garbled: json['garbled'] == true,
   );
 }

@@ -8,6 +8,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <esp_system.h>
+#include <math.h>
+#include <time.h>
 #include "DHT.h"
 
 #include "secrets.h"
@@ -56,6 +59,14 @@ const int SLOW_PWM = 120;
 
 const float PUMP_LITRES_PER_SECOND = 0.008f;
 
+// halloween easter egg: the closer it gets to halloween the more often the
+// sensors send garbled readings, the readings are flagged so the backend and
+// the app can tell them apart from the real ones
+const int HALLOWEEN_MONTH = 9;   // october, zero based
+const int HALLOWEEN_DAY = 31;
+const int HAUNTING_WINDOW_DAYS = 14;
+const float MAX_GARBLED_CHANCE = 0.8f;
+
 int curMode1 = FAST;
 int curMode2 = FAST;
 int curMode3 = FAST;
@@ -63,6 +74,12 @@ int curMode3 = FAST;
 struct UsageReport {
   int pumpId;
   float litres;
+};
+
+struct GarbledReading {
+  int moisture;
+  int humidity;
+  float temperature;
 };
 
 QueueHandle_t usageQueue = nullptr;
@@ -276,19 +293,88 @@ void sprinkle(int pumpPin) {
   Serial.println("-- Sprinkle Flow Mode --");
 }
 
-void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, float humiditySensorValue) {
+void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, float humiditySensorValue, bool garbled) {
   if (WiFi.status() == WL_CONNECTED) {
     JsonDocument doc;
     doc["sensor"] = sensor;
     doc["moisture_level"] = moisturePercent;
     doc["temperature"] = tempSensorValue;
     doc["humidity"] = humiditySensorValue;
+    doc["garbled"] = garbled;
 
     String jsonString;
     serializeJson(doc, jsonString);
     webSocket.sendTXT(jsonString);
-    Serial.println("Sent sensor data payload");
+    if (garbled) {
+      Serial.println("Sent a haunted sensor data payload");
+    } else {
+      Serial.println("Sent sensor data payload");
+    }
   }
+}
+
+// Days left until halloween, negative once it has passed.
+int daysUntilHalloween() {
+  time_t now = 0;
+  time(&now);
+
+  struct tm nowInfo;
+  localtime_r(&now, &nowInfo);
+
+  struct tm today = nowInfo;
+  today.tm_hour = 0;
+  today.tm_min = 0;
+  today.tm_sec = 0;
+
+  struct tm halloween = {};
+  halloween.tm_year = nowInfo.tm_year;
+  halloween.tm_mon = HALLOWEEN_MONTH;
+  halloween.tm_mday = HALLOWEEN_DAY;
+  halloween.tm_isdst = -1;
+
+  double days = difftime(mktime(&halloween), mktime(&today)) / 86400.0;
+  return (int)round(days);
+}
+
+// How haunted the greenhouse is, from 0 to 1, peaking on halloween itself.
+float halloweenHaunting() {
+  int days = daysUntilHalloween();
+  if (days < 0 || days > HAUNTING_WINDOW_DAYS) {
+    return 0.0f;
+  }
+  return (float)(HAUNTING_WINDOW_DAYS - days) / (float)HAUNTING_WINDOW_DAYS;
+}
+
+// True when this reading has to be replaced by a haunted one.
+bool shouldSendGarbledData() {
+  float haunting = halloweenHaunting();
+  if (haunting <= 0.0f) {
+    return false;
+  }
+  uint32_t roll = esp_random() % 1000;
+  return roll < (uint32_t)(haunting * MAX_GARBLED_CHANCE * 1000.0f);
+}
+
+// A reading no real sensor could have produced.
+GarbledReading garbledReading() {
+  GarbledReading reading;
+  reading.moisture = (int)random(101, 1000);
+  reading.humidity = (int)random(101, 1000);
+  reading.temperature = -50.0f + ((float)random(0, 2000) / 10.0f);
+  return reading;
+}
+
+// Publishes the reading to the backend, occasionally replacing it with a
+// haunted one the closer it gets to halloween. The real reading is still used
+// for the pump logic so the greenhouse keeps working.
+void publishSensorReading(int sensor, int moisturePercent, float tempValue, float humidityValue) {
+  if (shouldSendGarbledData()) {
+    GarbledReading haunted = garbledReading();
+    Serial.printf("The sensors are haunted, sending garbled data for sensor %d\n", sensor);
+    sendSensorData(sensor, haunted.moisture, haunted.temperature, haunted.humidity, true);
+    return;
+  }
+  sendSensorData(sensor, moisturePercent, tempValue, humidityValue, false);
 }
 
 void activatePumpMode(int pumpId, int pumpPin, int curMode) {
@@ -319,6 +405,9 @@ void openPump(int pumpId, int moisturePercent, float tempValue, float humidityVa
 
 void setup() {
   Serial.begin(115200);
+
+  srandom(esp_random());
+  configTime(0, 0, "pool.ntp.org");
 
   WiFi.begin(SSID, PASSWORD);
   Serial.println("Connecting");
@@ -400,7 +489,7 @@ void loop() {
     Serial.print("Humidity 1 raw: ");
     Serial.println(humiditySensor1Value);
 
-    sendSensorData(1, moisture1Percent, tempSensor1Value, humiditySensor1Value);                 // TODO need to make magic value for sensor numbers
+    publishSensorReading(1, moisture1Percent, tempSensor1Value, humiditySensor1Value);
     openPump(1, moisture1Percent, tempSensor1Value, humiditySensor1Value, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
@@ -419,7 +508,7 @@ void loop() {
     Serial.print("Humidity 2 raw: ");
     Serial.println(humiditySensor2Value);
 
-    sendSensorData(2, moisture2Percent, tempSensor2Value, humiditySensor2Value);                 // TODO need to make magic value for sensor numbers
+    publishSensorReading(2, moisture2Percent, tempSensor2Value, humiditySensor2Value);
     openPump(2, moisture2Percent, tempSensor2Value, humiditySensor2Value, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
@@ -438,7 +527,7 @@ void loop() {
     Serial.print("Humidity 3 raw: ");
     Serial.println(humiditySensor3Value);
 
-    sendSensorData(3, moisture3Percent, tempSensor3Value, humiditySensor3Value);                 // TODO need to make magic value for sensor numbers
+    publishSensorReading(3, moisture3Percent, tempSensor3Value, humiditySensor3Value);
     openPump(3, moisture3Percent, tempSensor3Value, humiditySensor3Value, curMode3);
   }
 }

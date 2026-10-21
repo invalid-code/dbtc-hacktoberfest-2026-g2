@@ -28,4 +28,5 @@ async def save_sensor_data(
         humidity=body.humidity,
         recorded_at=recorded_at,
         temperature=body.temperature,
+        garbled=body.garbled,
     )

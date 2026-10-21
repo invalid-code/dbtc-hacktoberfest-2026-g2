@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -20,6 +20,8 @@ class SensorData(Base):
     humidity = Column(Integer, nullable=False)
     recorded_at = Column(DateTime, nullable=False)
     temperature: Column[float] = Column(Float, nullable=False)
+    # the microcontroller marks the readings it garbles as a halloween easter egg
+    garbled = Column(Boolean, nullable=False, default=False)
 
     sensor_id = Column(Integer, ForeignKey("sensor.id"), nullable=False)
 

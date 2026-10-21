@@ -7,6 +7,8 @@ import 'package:frontend/core/widgets/side_bar.dart';
 import 'package:frontend/features/sensors/presentation/viewmodel/sensor_readings_view_model.dart';
 import 'package:frontend/features/sensors/presentation/widgets/line_chart_painter.dart';
 
+const _trendHeight = 280.0;
+
 class SensorReadingsView extends StatefulWidget {
   const SensorReadingsView({super.key, this.api});
 
@@ -74,58 +76,60 @@ class _SensorReadingsViewState extends State<SensorReadingsView> {
                       const SizedBox(height: 22),
                       Panel(
                         title: 'Temperature Trends',
-                        child: _viewModel.failed
-                            ? const Text(
-                                'Could not load sensor readings',
-                                style: TextStyle(color: Colors.black54),
-                              )
-                            : loading
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 24),
+                        child: SizedBox(
+                          height: _trendHeight,
+                          child: _viewModel.failed
+                              ? const Center(
+                                  child: Text(
+                                    'Could not load sensor readings',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                )
+                              : loading
+                              ? const Center(
                                   child: CircularProgressIndicator(),
-                                ),
-                              )
-                            : !hasData
-                            ? const Text(
-                                'No sensor readings yet',
-                                style: TextStyle(color: Colors.black54),
-                              )
-                            : SizedBox(
-                                height: 280,
-                                child: CustomPaint(
+                                )
+                              : !hasData
+                              ? const Center(
+                                  child: Text(
+                                    'No sensor readings yet',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                )
+                              : CustomPaint(
                                   painter: ChartPainter(values: tempValues),
                                   child: const SizedBox.expand(),
                                 ),
-                              ),
+                        ),
                       ),
                       const SizedBox(height: 18),
                       Panel(
                         title: 'Moisture Trends',
-                        child: _viewModel.failed
-                            ? const Text(
-                                'Could not load sensor readings',
-                                style: TextStyle(color: Colors.black54),
-                              )
-                            : loading
-                            ? const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 24),
+                        child: SizedBox(
+                          height: _trendHeight,
+                          child: _viewModel.failed
+                              ? const Center(
+                                  child: Text(
+                                    'Could not load sensor readings',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                )
+                              : loading
+                              ? const Center(
                                   child: CircularProgressIndicator(),
-                                ),
-                              )
-                            : !hasData
-                            ? const Text(
-                                'No sensor readings yet',
-                                style: TextStyle(color: Colors.black54),
-                              )
-                            : SizedBox(
-                                height: 280,
-                                child: CustomPaint(
+                                )
+                              : !hasData
+                              ? const Center(
+                                  child: Text(
+                                    'No sensor readings yet',
+                                    style: TextStyle(color: Colors.black54),
+                                  ),
+                                )
+                              : CustomPaint(
                                   painter: LineChartPainter(values: values),
                                   child: const SizedBox.expand(),
                                 ),
-                              ),
+                        ),
                       ),
                     ],
                   ),

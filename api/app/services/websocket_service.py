@@ -16,6 +16,7 @@ async def broadcast_sensor_data(sensor_data: SensorData) -> None:
                     "humidity": sensor_data.humidity,
                     "temperature": sensor_data.temperature,
                     "recorded_at": sensor_data.recorded_at.isoformat(),
+                    "garbled": sensor_data.garbled,
                 }
             )
         except Exception:

@@ -45,10 +45,13 @@ def _require_configured() -> None:
 
 
 def _format_reading(reading: SensorData) -> str:
-    return (
+    text = (
         f"soil moisture {reading.moisture_level}%, humidity {reading.humidity}%, "
         f"temperature {reading.temperature} C"
     )
+    if reading.garbled:
+        text += " (haunted easter egg reading, these numbers are not real)"
+    return text
 
 
 async def build_context(db: AsyncSession) -> str:
@@ -73,8 +76,10 @@ async def build_context(db: AsyncSession) -> str:
         trend = "; ".join(
             f"{reading.moisture_level}% moisture, {reading.temperature} C"
             for reading in reversed(recent)
+            if not reading.garbled
         )
-        lines.append(f"Recent readings (oldest first): {trend}.")
+        if trend:
+            lines.append(f"Recent readings (oldest first): {trend}.")
 
     if alerts:
         alert_text = "; ".join(

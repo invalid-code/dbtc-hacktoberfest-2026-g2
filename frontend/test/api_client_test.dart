@@ -14,12 +14,29 @@ void main() {
       'temperature': 23.5,
       'recorded_at': '2026-10-20T16:02:30.761213',
       'sensor_id': 1,
+      'garbled': false,
     });
 
     expect(reading.moisture, 42);
     expect(reading.humidity, 78);
     expect(reading.temperature, 23.5);
     expect(reading.recordedAt, isNotNull);
+    expect(reading.garbled, isFalse);
+  });
+
+  test('tells garbled readings apart from the real ones', () {
+    final reading = SensorReading.fromJson(const {
+      'id': 2,
+      'moisture_level': 666,
+      'humidity': 999,
+      'temperature': -42.5,
+      'recorded_at': '2026-10-31T23:59:00',
+      'sensor_id': 1,
+      'garbled': true,
+    });
+
+    expect(reading.garbled, isTrue);
+    expect(reading.moisture, 666);
   });
 
   test('reads the sensor, pump and mode endpoints', () async {

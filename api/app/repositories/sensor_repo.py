@@ -46,6 +46,7 @@ async def create_sensor_data(
     humidity: int,
     recorded_at,
     temperature: float,
+    garbled: bool = False,
 ) -> SensorData:
     new_sensor_data = SensorData(
         sensor_id=sensor_id,
@@ -53,6 +54,7 @@ async def create_sensor_data(
         humidity=humidity,
         recorded_at=recorded_at,
         temperature=temperature,
+        garbled=garbled,
     )
     db.add(new_sensor_data)
     await db.commit()

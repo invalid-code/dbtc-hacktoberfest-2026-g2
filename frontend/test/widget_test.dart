@@ -5,6 +5,7 @@ import 'package:http/testing.dart';
 
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/network/sensor_ws.dart';
+import 'package:frontend/core/widgets/panel.dart';
 import 'package:frontend/main.dart';
 
 class _FakeFeed extends SensorFeed {
@@ -39,18 +40,57 @@ http.Response _responseFor(String path) {
   }
 }
 
+http.Response _emptyResponseFor(String path) {
+  switch (path) {
+    case '/sensor/data/':
+      return http.Response('[]', 200);
+    case '/alerts/':
+      return http.Response('{"alerts":[]}', 200);
+    case '/pump/usage/today':
+      return http.Response('{"liters":0}', 200);
+    default:
+      return _responseFor(path);
+  }
+}
+
+http.Response _garbledResponseFor(String path) {
+  switch (path) {
+    case '/sensor/data/':
+      return http.Response(
+        '[{"id":2,"moisture_level":666,"humidity":999,"temperature":-42.5,'
+        '"recorded_at":"2026-10-31T23:59:00","sensor_id":1,"garbled":true}]',
+        200,
+      );
+    case '/alerts/':
+      return http.Response(
+        '{"alerts":[{"message":"Spooky sensor data detected: the greenhouse is '
+        'haunted and the latest readings are unreliable",'
+        '"severity":"spooky"}]}',
+        200,
+      );
+    default:
+      return _responseFor(path);
+  }
+}
+
+Widget _app(http.Response Function(String path) response) => GreenhouseApp(
+  api: () => GreenhouseApi(
+    client: MockClient((request) async => response(request.url.path)),
+  ),
+  feed: _FakeFeed.new,
+);
+
+double _panelHeight(WidgetTester tester, String title) {
+  final panel = find.ancestor(
+    of: find.text(title),
+    matching: find.byType(Panel),
+  );
+  return tester.getSize(panel.first).height;
+}
+
 void main() {
   testWidgets('dashboard renders greenhouse controls', (WidgetTester tester) async {
-    await tester.pumpWidget(
-      GreenhouseApp(
-        api: () => GreenhouseApi(
-          client: MockClient(
-            (request) async => _responseFor(request.url.path),
-          ),
-        ),
-        feed: _FakeFeed.new,
-      ),
-    );
+    await tester.pumpWidget(_app(_responseFor));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
@@ -63,6 +103,62 @@ void main() {
     expect(find.text('78%'), findsOneWidget);
     expect(find.text('12.5 L'), findsOneWidget);
     expect(find.text('Mode: Drip'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('trend panels keep their height without readings', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_emptyResponseFor));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    await tester.tap(find.text('Sensor Readings'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('No sensor readings yet'), findsNWidgets(3));
+    expect(_panelHeight(tester, 'Temperature Trends'), greaterThan(300));
+    expect(_panelHeight(tester, 'Moisture Trends'), greaterThan(300));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('alerts panel keeps its height without alerts', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_emptyResponseFor));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('No alerts'), findsOneWidget);
+    expect(_panelHeight(tester, 'Alerts'), greaterThan(300));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('flags garbled readings and shows the spooky alert', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(_garbledResponseFor));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.textContaining('Spooky sensor data detected'), findsOneWidget);
+    expect(
+      find.textContaining('haunted, the numbers cannot be trusted'),
+      findsOneWidget,
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
