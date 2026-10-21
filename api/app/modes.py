@@ -29,5 +29,5 @@ def mode_name(mode: int) -> str:
 def mode_index_from_name(name: str) -> int | None:
     try:
         return MODE_INDEX[PumpModeName(name.upper()).name]
-    except KeyError:
+    except (KeyError, ValueError):
         return None

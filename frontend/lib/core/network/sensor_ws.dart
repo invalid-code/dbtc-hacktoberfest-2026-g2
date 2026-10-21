@@ -1,10 +1,23 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
+
+/// Turns a websocket message into a reading. Returns null when the message is
+/// not a sensor reading.
+SensorReading? sensorReadingFromMessage(dynamic event) {
+  try {
+    final json = jsonDecode(event as String) as Map<String, dynamic>;
+    if (!json.containsKey('moisture_level')) return null;
+    return SensorReading.fromJson(json);
+  } catch (_) {
+    return null;
+  }
+}
 
 class SensorFeed {
   SensorFeed({String? baseUrl}) : _baseUrl = baseUrl ?? apiBaseUrl;
@@ -35,12 +48,17 @@ class SensorFeed {
     }
   }
 
+  /// Pushes a reading into the feed, used by the tests.
+  @visibleForTesting
+  void publish(SensorReading reading) {
+    if (_disposed) return;
+    _controller.add(reading);
+  }
+
   void _onMessage(dynamic event) {
-    try {
-      final json = jsonDecode(event as String) as Map<String, dynamic>;
-      if (!json.containsKey('moisture_level')) return;
-      _controller.add(SensorReading.fromJson(json));
-    } catch (_) {}
+    final reading = sensorReadingFromMessage(event);
+    if (reading == null) return;
+    _controller.add(reading);
   }
 
   void _onError(Object error) {

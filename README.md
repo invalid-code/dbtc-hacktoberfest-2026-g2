@@ -89,6 +89,24 @@ flutter build web --dart-define=API_BASE_URL=https://your-api.example.com
 
 For local development, the client defaults to `http://localhost:8000`.
 
+## Running the tests
+
+The API tests run against a throwaway SQLite database, they never touch the
+configured one:
+
+```powershell
+cd api
+uv sync --group dev
+uv run pytest
+```
+
+The frontend tests need the Flutter SDK:
+
+```powershell
+cd frontend
+flutter test
+```
+
 ## Connecting the ESP32
 
 Create `microcontroller/secrets.h` from the device's local configuration and

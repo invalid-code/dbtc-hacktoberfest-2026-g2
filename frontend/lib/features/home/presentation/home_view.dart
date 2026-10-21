@@ -152,7 +152,10 @@ class _HomeViewState extends State<HomeView> {
                         },
                       ),
                       const SizedBox(height: 22),
-                      AlertsCard(alerts: _viewModel.alerts),
+                      AlertsCard(
+                        alerts: _viewModel.alerts,
+                        failed: _viewModel.alertsFailed,
+                      ),
                     ],
                   ),
                 ),

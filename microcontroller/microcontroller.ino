@@ -59,10 +59,7 @@ const int SLOW_PWM = 120;
 
 const float PUMP_LITRES_PER_SECOND = 0.008f;
 
-// halloween easter egg: the closer it gets to halloween the more often the
-// sensors send garbled readings, the readings are flagged so the backend and
-// the app can tell them apart from the real ones
-const int HALLOWEEN_MONTH = 9;   // october, zero based
+const int HALLOWEEN_MONTH = 9;
 const int HALLOWEEN_DAY = 31;
 const int HAUNTING_WINDOW_DAYS = 14;
 const float MAX_GARBLED_CHANCE = 0.8f;
@@ -313,7 +310,6 @@ void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, floa
   }
 }
 
-// Days left until halloween, negative once it has passed.
 int daysUntilHalloween() {
   time_t now = 0;
   time(&now);
@@ -336,7 +332,6 @@ int daysUntilHalloween() {
   return (int)round(days);
 }
 
-// How haunted the greenhouse is, from 0 to 1, peaking on halloween itself.
 float halloweenHaunting() {
   int days = daysUntilHalloween();
   if (days < 0 || days > HAUNTING_WINDOW_DAYS) {
@@ -345,7 +340,6 @@ float halloweenHaunting() {
   return (float)(HAUNTING_WINDOW_DAYS - days) / (float)HAUNTING_WINDOW_DAYS;
 }
 
-// True when this reading has to be replaced by a haunted one.
 bool shouldSendGarbledData() {
   float haunting = halloweenHaunting();
   if (haunting <= 0.0f) {
@@ -355,7 +349,6 @@ bool shouldSendGarbledData() {
   return roll < (uint32_t)(haunting * MAX_GARBLED_CHANCE * 1000.0f);
 }
 
-// A reading no real sensor could have produced.
 GarbledReading garbledReading() {
   GarbledReading reading;
   reading.moisture = (int)random(101, 1000);
@@ -364,9 +357,6 @@ GarbledReading garbledReading() {
   return reading;
 }
 
-// Publishes the reading to the backend, occasionally replacing it with a
-// haunted one the closer it gets to halloween. The real reading is still used
-// for the pump logic so the greenhouse keeps working.
 void publishSensorReading(int sensor, int moisturePercent, float tempValue, float humidityValue) {
   if (shouldSendGarbledData()) {
     GarbledReading haunted = garbledReading();
