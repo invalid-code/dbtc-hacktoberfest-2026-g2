@@ -20,18 +20,18 @@ optionally drives the pump modes on the device.
 
 ## Stack
 
-| Concern | Choice |
-|---|---|
-| Language | Python 3.14 (`api/.python-version`) |
-| Web framework | FastAPI, served by uvicorn |
-| Validation | Pydantic v2 + pydantic-settings |
-| ORM | SQLAlchemy 2.1 async ORM |
-| Database | PostgreSQL via `asyncpg` (`psycopg2` for Alembic) |
-| Migrations | Alembic |
-| WebSockets | `websockets` via uvicorn |
-| HTTP client | `httpx` (device polling, Gemini) |
-| AI | Google Gemini, `generativelanguage.googleapis.com` |
-| Tests | pytest + pytest-asyncio + aiosqlite |
+|      Concern       |                           Choice                           |
+|--------------------|------------------------------------------------------------|
+| Language           | Python 3.14 (`api/.python-version`)                        |
+| Web framework      | FastAPI, served by uvicorn                                 |
+| Validation         | Pydantic v2 + pydantic-settings                            |
+| ORM                | SQLAlchemy 2.1 async ORM                                   |
+| Database           | PostgreSQL via `asyncpg` (`psycopg2` for Alembic)          |
+| Migrations         | Alembic                                                    |
+| WebSockets         | `websockets` via uvicorn                                   |
+| HTTP client        | `httpx` (device polling, Gemini)                           |
+| AI                 | Google Gemini, `generativelanguage.googleapis.com`         |
+| Tests              | pytest + pytest-asyncio + aiosqlite                        |
 | Dependency manager | `uv` (`pyproject.toml` + `uv.lock`, no `requirements.txt`) |
 
 ## Running it
@@ -51,15 +51,15 @@ Interactive API docs: <http://localhost:8000/docs>. Health check:
 `api/app/config.py` reads these from the environment (and from `api/.env`,
 which is git-ignored):
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `DB_CONN_STR` | *required* | SQLAlchemy async URL, e.g. `postgresql+asyncpg://user:pass@host/db` |
-| `FRONTEND_URL` | `*` | Comma-separated CORS origin allow-list |
-| `DEVICE_URL` | `""` | Base URL of the ESP32's HTTP server. Empty disables device polling |
-| `DEVICE_POLL_INTERVAL_SECONDS` | `5.0` | How often the API polls the device for pump modes |
-| `GEMINI_API_KEY` | `""` | Google AI Studio key. Empty makes the `/gemini/*` endpoints return 503 |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Model id sent to Gemini |
-| `GEMINI_TIMEOUT_SECONDS` | `30.0` | Timeout for Gemini requests |
+|            Variabl             |      Default       |                                Meaning                                 |
+|--------------------------------|--------------------|------------------------------------------------------------------------|
+| `DB_CONN_STR`                  | *required*         | SQLAlchemy async URL, e.g. `postgresql+asyncpg://user:pass@host/db`    |
+| `FRONTEND_URL`                 | `*`                | Comma-separated CORS origin allow-list                                 |
+| `DEVICE_URL`                   | `""`               | Base URL of the ESP32's HTTP server. Empty disables device polling     |
+| `DEVICE_POLL_INTERVAL_SECONDS` | `5.0`              | How often the API polls the device for pump modes                      |
+| `GEMINI_API_KEY`               | `""`               | Google AI Studio key. Empty makes the `/gemini/*` endpoints return 503 |
+| `GEMINI_MODEL`                 | `gemini-3.8-flash` | Model id sent to Gemini                                                |
+| `GEMINI_TIMEOUT_SECONDS`       | `30.0`             | Timeout for Gemini requests                                            |
 
 `FRONTEND_URL=*` sets `allow_credentials=False` (Starlette forbids credentials
 with a wildcard origin). Any other value sets it to `True`.
@@ -70,7 +70,7 @@ The code follows one direction:
 
 ```
 routers/  ──▶  services/  ──▶  repositories/  ──▶  models.py
-   │              │                  │
+   │               │                   │
    └── schemas.py  └─── business logic └─── all SQL lives here
 ```
 
@@ -85,21 +85,21 @@ routers/  ──▶  services/  ──▶  repositories/  ──▶  models.py
 
 ## Endpoints
 
-| Method | Path | Handler | Purpose |
-|---|---|---|---|
-| GET | `/health` | `main.py` | Liveness probe |
-| GET | `/sensor/` | `sensor_router.py` | List the sensor devices |
-| GET | `/sensor/data/` | `sensor_router.py` | List every sensor reading |
-| GET | `/pump/` | `pump_router.py` | List the pumps |
-| GET | `/pump/mode/` | `pump_router.py` | List the desired and observed pump modes |
-| PUT | `/pump/mode/` | `pump_router.py` | Set the desired mode of a pump |
-| GET | `/pump/history/` | `pump_router.py` | Watering history, newest first |
-| POST | `/pump/history/` | `pump_router.py` | Record water usage (called by the device) |
-| GET | `/pump/usage/today` | `pump_router.py` | Litres used since local midnight |
-| GET | `/alerts/` | `alert_router.py` | Alerts evaluated against the latest reading |
-| GET | `/gemini/insight/` | `gemini_router.py` | AI insight about the current state |
-| POST | `/gemini/ask/` | `gemini_router.py` | AI question about the greenhouse |
-| WS | `/mc-ws/` | `websocket_router.py` | Device publishes readings, everyone receives them |
+| Method |        Path         |        Handler        |                      Purpose                      |
+|--------|---------------------|-----------------------|---------------------------------------------------|
+| GET    | `/health`           | `main.py`             | Liveness probe                                    |
+| GET    | `/sensor/`          | `sensor_router.py`    | List the sensor devices                           |
+| GET    | `/sensor/data/`     | `sensor_router.py`    | List every sensor reading                         |
+| GET    | `/pump/`            | `pump_router.py`      | List the pumps                                    |
+| GET    | `/pump/mode/`       | `pump_router.py`      | List the desired and observed pump modes          |
+| PUT    | `/pump/mode/`       | `pump_router.py`      | Set the desired mode of a pump                    |
+| GET    | `/pump/history/`    | `pump_router.py`      | Watering history, newest first                    |
+| POST   | `/pump/history/`    | `pump_router.py`      | Record water usage (called by the device)         |
+| GET    | `/pump/usage/today` | `pump_router.py`      | Litres used since local midnight                  |
+| GET    | `/alerts/`          | `alert_router.py`     | Alerts evaluated against the latest reading       |
+| GET    | `/gemini/insight/`  | `gemini_router.py`    | AI insight about the current state                |
+| POST   | `/gemini/ask/`      | `gemini_router.py`    | AI question about the greenhouse                  |
+| WS     | `/mc-ws/`           | `websocket_router.py` | Device publishes readings, everyone receives them |
 
 ### Sensor readings
 
@@ -232,19 +232,19 @@ uv run alembic upgrade head
 
 The chain is linear, head is `b2c3d4e5f6a7`:
 
-| Revision | Change |
-|---|---|
-| `9bafc0551a33` | Base — `sensor_data` with `moisture_level` and `water_level` |
-| `8b2d48567ac2` | Drops the `users` and `refresh_tokens` tables (removes auth) |
-| `226664d29595` | Adds `sensor_data.sensor` |
-| `ea1d4c867711` | No-op placeholder |
+|    Revision    |                                               Change                                               |
+|----------------|----------------------------------------------------------------------------------------------------|
+| `9bafc0551a33` | Base — `sensor_data` with `moisture_level` and `water_level`                                       |
+| `8b2d48567ac2` | Drops the `users` and `refresh_tokens` tables (removes auth)                                       |
+| `226664d29595` | Adds `sensor_data.sensor`                                                                          |
+| `ea1d4c867711` | No-op placeholder                                                                                  |
 | `c9318941d64b` | Creates `pump` and `sensor`; adds the `pump_mode.pump_id` and `sensor_data.sensor_id` foreign keys |
-| `83b1f306fe92` | Creates `pump_history` |
-| `a1f2c3d4e5f6` | Adds `sensor_data.recorded_at` |
-| `b7c9d1e3f5a2` | Adds `sensor_data.temperature` |
-| `d3e4f5a6b7c8` | Makes `temperature` required, adds `humidity`, drops `water_level` |
-| `e5f6a7b8c9d0` | Adds `pump_mode.observed_mode` and `last_seen_at` |
-| `b2c3d4e5f6a7` | Adds `sensor_data.garbled` (head) |
+| `83b1f306fe92` | Creates `pump_history`                                                                             |
+| `a1f2c3d4e5f6` | Adds `sensor_data.recorded_at`                                                                     |
+| `b7c9d1e3f5a2` | Adds `sensor_data.temperature`                                                                     |
+| `d3e4f5a6b7c8` | Makes `temperature` required, adds `humidity`, drops `water_level`                                 |
+| `e5f6a7b8c9d0` | Adds `pump_mode.observed_mode` and `last_seen_at`                                                  |
+| `b2c3d4e5f6a7` | Adds `sensor_data.garbled` (head)                                                                  |
 
 ## Pump-mode polling
 
@@ -268,13 +268,13 @@ swallowed, so an unreachable device never takes the API down.
 
 `app/services/alert_service.py` evaluates the **latest** reading only:
 
-| Condition | Message | Severity |
-|---|---|---|
-| No readings at all | "No sensor readings yet" | `warning` |
-| Latest reading is garbled | "Spooky sensor data detected: …" | `spooky` |
-| Humidity ≤ 20 % | "Check humidity levels" | `critical` |
-| Moisture ≤ 30 % | "Soil moisture is low" | `warning` |
-| Reading older than 30 minutes | "Sensor readings are stale" | `warning` |
+|           Condition           |             Message              |  Severity  |
+|-------------------------------|----------------------------------|------------|
+| No readings at all            | "No sensor readings yet"         | `warning`  |
+| Latest reading is garbled     | "Spooky sensor data detected: …" | `spooky`   |
+| Humidity ≤ 20 %               | "Check humidity levels"          | `critical` |
+| Moisture ≤ 30 %               | "Soil moisture is low"           | `warning`  |
+| Reading older than 30 minutes | "Sensor readings are stale"      | `warning`  |
 
 A garbled reading short-circuits everything else: the thresholds would be
 judging fake numbers.
@@ -287,12 +287,12 @@ and the 5 most recent waterings, then asks Gemini.
 
 Error mapping:
 
-| Status | Cause |
-|---|---|
-| 503 | `GEMINI_API_KEY` is not set |
-| 400 | Gemini blocked the prompt (`promptFeedback.blockReason`) |
-| 502 | Gemini failed, returned non-JSON, or returned no text |
-| 504 | The request timed out |
+| Status |                          Cause                           |
+|--------|----------------------------------------------------------|
+|  503   | `GEMINI_API_KEY` is not set                              |
+|  400   | Gemini blocked the prompt (`promptFeedback.blockReason`) |
+|  502   | Gemini failed, returned non-JSON, or returned no text    |
+|  504   | The request timed out                                    |
 
 Garbled readings are excluded from the trend line and the prompt says so
 explicitly, so the model does not reason about haunted numbers.
@@ -311,23 +311,23 @@ sets `FRONTEND_URL=*` and disables the device poll.
 
 Fixtures:
 
-| Fixture | Purpose |
-|---|---|
-| `database` | Creates the schema once per session, disposes the engine and deletes the file afterwards |
-| `clean_db` | Empties every table and re-seeds pumps 1–3 in `FAST` mode, before and after each test |
-| `db_session` | A database session for unit tests |
-| `client` | An `httpx.AsyncClient` talking to the app in process over `ASGITransport` |
+|   Fixture    |                                         Purpose                                          |
+|--------------|------------------------------------------------------------------------------------------|
+| `database`   | Creates the schema once per session, disposes the engine and deletes the file afterwards |
+| `clean_db`   | Empties every table and re-seeds pumps 1–3 in `FAST` mode, before and after each test    |
+| `db_session` | A database session for unit tests                                                        |
+| `client`     | An `httpx.AsyncClient` talking to the app in process over `ASGITransport`                |
 
 The suite covers 45 tests:
 
-| File | Tests | What it covers |
-|---|---|---|
-| `test_api.py` | 12 | Every REST endpoint, the 422 on an incomplete mode update, the 404 on an unknown path |
-| `test_websocket.py` | 3 | A real uvicorn server: a reading is stored and broadcast, the garbled flag survives, a malformed payload is rejected |
-| `test_alert_service.py` | 8 | Every alert rule, including that a garbled reading suppresses the others and that the latest reading wins |
-| `test_pump_service.py` | 8 | Pump and mode seeding, mode updates, history ordering, today's usage |
-| `test_sensor_service.py` | 6 | Field persistence, the garbled flag, explicit timestamps, auto-created sensors, "latest" and "recent" ordering |
-| `test_modes_and_schemas.py` | 8 | The mode order matches the microcontroller's enum, schema defaults and validation errors |
+|            File             | Tests |                                                    What it covers                                                    |
+|-----------------------------|-------|----------------------------------------------------------------------------------------------------------------------|
+| `test_api.py`               |  12   | Every REST endpoint, the 422 on an incomplete mode update, the 404 on an unknown path                                |
+| `test_websocket.py`         |   3   | A real uvicorn server: a reading is stored and broadcast, the garbled flag survives, a malformed payload is rejected |
+| `test_alert_service.py`     |   8   | Every alert rule, including that a garbled reading suppresses the others and that the latest reading wins            |
+| `test_pump_service.py`      |   8   | Pump and mode seeding, mode updates, history ordering, today's usage                                                 |
+| `test_sensor_service.py`    |   6   | Field persistence, the garbled flag, explicit timestamps, auto-created sensors, "latest" and "recent" ordering       |
+| `test_modes_and_schemas.py` |   8   | The mode order matches the microcontroller's enum, schema defaults and validation errors                             |
 
 ## Things to know
 

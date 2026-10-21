@@ -14,32 +14,32 @@ from a dashboard.
 
 Component-level documentation:
 
-| Component | Doc |
-|---|---|
-| `api/` | [api/README.md](api/README.md) |
-| `frontend/` | [frontend/README.md](frontend/README.md) |
+| Component          |                           Doc                          |
+|--------------------|--------------------------------------------------------|
+| `api/`             | [api/README.md](api/README.md)                         |
+| `frontend/`        | [frontend/README.md](frontend/README.md)               |
 | `microcontroller/` | [microcontroller/README.md](microcontroller/README.md) |
 
 ## Architecture
 
 ```
                     ┌──────────────────────────┐
-                    │   ESP32 (microcontroller) │
-                    │  DHT11 x3, soil sensors x3 │
-                    │  pumps x3, HTTP mode server │
-                    └───────┬───────────┬───────┘
+                    │ ESP32 (microcontroller)  │
+                    │ DHT11 x3, soil sensors x3│
+                    │pumps x3, HTTP mode server│
+                    └────────┬───────────┬─────┘
               WebSocket      │           │  HTTP
         /mc-ws/ (readings)   │           │  POST /pump/history/
                     ┌────────▼───────────▼───────┐
-                    │        FastAPI (api/)       │
-                    │  routers → services → repos │
-                    │            ↕ SQLAlchemy      │
-                    │       PostgreSQL (asyncpg)  │
+                    │       FastAPI (api/)       │
+                    │ routers → services → repos │
+                    │        ↕ SQLAlchemy        │
+                    │    PostgreSQL (asyncpg)    │
                     └────────▲───────────▲───────┘
                     REST /   │           │  WebSocket /mc-ws/
                     ┌────────┴───────────┴───────┐
-                    │      Flutter (frontend/)   │
-                    │  go_router + ChangeNotifier │
+                    │    Flutter (frontend/)     │
+                    │ go_router + ChangeNotifier │
                     └────────────────────────────┘
 ```
 
@@ -100,12 +100,12 @@ column name; the WebSocket broadcast keeps the name `sensor`.
 **Pump mode ordinals.** The mode is stored as an integer everywhere, and the
 integers are the ordinals of the Arduino `OperatingMode` enum:
 
-| Ordinal | Mode | Behaviour | Litres per run |
-|---|---|---|---|
-| 0 | `FAST` | full power for 750 ms | 0.0060 |
-| 1 | `SLOW` | 47 % PWM for 750 ms | 0.0028 |
-| 2 | `DRIP` | 150 ms on, 2.5 s off | 0.0012 |
-| 3 | `SPRINKLE` | not implemented | 0.0 |
+| Ordinal | Mode       | Behaviour             | Litres per run |
+|---------|------------|-----------------------|----------------|
+|    0    |   `FAST`   | full power for 750 ms |     0.0060     |
+|    1    |   `SLOW`   | 47 % PWM for 750 ms   |     0.0028     |
+|    2    |   `DRIP`   | 150 ms on, 2.5 s off  |     0.0012     |
+|    3    | `SPRINKLE` | not implemented       |       0.0      |
 
 `api/app/modes.py`, `microcontroller/microcontroller.ino` and
 `frontend/lib/model/pump_info.dart` each hold the same ordered list. The

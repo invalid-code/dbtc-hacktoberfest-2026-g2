@@ -19,12 +19,12 @@ modes.
 
 An ESP32 DevKit with three sensors per zone:
 
-| Peripheral | Pins | Notes |
-|---|---|---|
-| DHT11 temperature/humidity | 4, 16, 17 | One per zone |
-| Capacitive soil moisture | 36, 35, 25 | ADC, raw 0–2800 mapped to 0–100 % |
-| Water pump | 25, 26, 27 | Digital output |
-| Water level sensor | 39, 32, 26 | ADC, declared but never read |
+|         Peripheral         |    Pins    |               Notes               |
+|----------------------------|------------|-----------------------------------|
+| DHT11 temperature/humidity | 4, 16, 17  | One per zone                      |
+| Capacitive soil moisture   | 36, 35, 25 | ADC, raw 0–2800 mapped to 0–100 % |
+| Water pump                 | 25, 26, 27 | Digital output                    |
+| Water level sensor         | 39, 32, 26 | ADC, declared but never read      |
 
 Zone 1 is sensor 1 / pump 1, zone 2 is sensor 2 / pump 2, and so on.
 
@@ -54,15 +54,15 @@ requests.
 
 ## Libraries
 
-| Library | Used for |
-|---|---|
-| `WiFi.h` | Networking |
-| `WebSocketsClient.h` | The WebSocket to the API |
-| `WebServer.h` | The `/mode` HTTP server the API polls |
-| `ArduinoJson.h` | Building and parsing the JSON payloads |
-| `HTTPClient.h` | Posting the water usage |
-| `DHT.h` | The DHT11 sensors |
-| `freertos/*` | The queue and task that keep the HTTP POST off the main loop |
+|        Library       |                           Used for                           |
+|----------------------|--------------------------------------------------------------|
+| `WiFi.h`             | Networking                                                   |
+| `WebSocketsClient.h` | The WebSocket to the API                                     |
+| `WebServer.h`        | The `/mode` HTTP server the API polls                        |
+| `ArduinoJson.h`      | Building and parsing the JSON payloads                       |
+| `HTTPClient.h`       | Posting the water usage                                      |
+| `DHT.h`              | The DHT11 sensors                                            |
+| `freertos/*`         | The queue and task that keep the HTTP POST off the main loop |
 
 ## The main loop
 
@@ -123,11 +123,11 @@ enum OperatingMode { FAST, SLOW, DRIP, SPRINKLE };
 ```
 
 | Mode | Behaviour | Duration | Litres |
-|---|---|---|---|
-| `FAST` | `digitalWrite(HIGH)` | 750 ms | 0.0060 |
-| `SLOW` | `analogWrite(pin, 120)` — 47 % PWM | 750 ms | 0.0028 |
-| `DRIP` | 150 ms on, then 2.5 s off | 150 ms | 0.0012 |
-| `SPRINKLE` | Nothing, not implemented | — | 0.0 |
+|------------|------------------------------------|--------|--------|
+| `FAST`     | `digitalWrite(HIGH)`               | 750 ms | 0.0060 |
+| `SLOW`     | `analogWrite(pin, 120)` — 47 % PWM | 750 ms | 0.0028 |
+| `DRIP`     | 150 ms on, then 2.5 s off          | 150 ms | 0.0012 |
+| `SPRINKLE` | Nothing, not implemented           |   —    |  0.0   |
 
 The litre figures come from `PUMP_LITRES_PER_SECOND = 0.008`, scaled by the
 run time and, for `SLOW`, by the PWM duty cycle.
@@ -171,10 +171,10 @@ full.
 
 The ESP32 runs a `WebServer` on port 80 with two handlers:
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| GET | `/mode` | — | `{"modes":{"1":"FAST","2":"SLOW","3":"DRIP"}}` |
-| POST | `/mode` | `{"pump": 1, "mode": "DRIP"}` | `{"pump":1,"mode":"DRIP"}` |
+| Method |  Path   |            Request            |                    Response                    |
+|--------|---------|-------------------------------|------------------------------------------------|
+|  GET   | `/mode` | —                             | `{"modes":{"1":"FAST","2":"SLOW","3":"DRIP"}}` |
+|  POST  | `/mode` | `{"pump": 1, "mode": "DRIP"}` | `{"pump":1,"mode":"DRIP"}`                     |
 
 `POST /mode` also accepts form arguments instead of a JSON body. It answers
 `400` with `{"error":"pump and mode are required"}` when the pump or the mode
