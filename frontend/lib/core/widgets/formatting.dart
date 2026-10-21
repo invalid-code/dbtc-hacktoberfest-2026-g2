@@ -1,13 +1,16 @@
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 
+/// The name of the pump of a watering record, `Pump` when the pump is unknown.
 String pumpLabel(PumpHistoryEntry entry) =>
     entry.pump == null ? 'Pump' : 'Pump #${entry.pump}';
 
+/// The volume in liters, without decimals when the amount is whole.
 String formatLiters(double liters) {
   final num value = liters == liters.roundToDouble() ? liters.toInt() : liters;
   return '$value L';
 }
 
+/// The time of a reading as `h:mm AM/PM`.
 String formatTime(DateTime? recordedAt) {
   if (recordedAt == null) return 'Unknown time';
   final hour24 = recordedAt.hour;
@@ -16,6 +19,9 @@ String formatTime(DateTime? recordedAt) {
   return '$hour:$minute ${hour24 < 12 ? 'AM' : 'PM'}';
 }
 
+/// The date and the time of a reading.
+///
+/// The dates are formatted by hand because `intl` is not a dependency.
 String formatRecordedAt(DateTime? recordedAt) {
   if (recordedAt == null) return 'Unknown date';
   const months = [

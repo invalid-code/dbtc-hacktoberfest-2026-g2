@@ -9,6 +9,7 @@ import 'package:frontend/features/sensors/presentation/widgets/line_chart_painte
 
 const _trendHeight = 280.0;
 
+/// The current conditions plus the temperature and the moisture trend panels.
 class SensorReadingsView extends StatefulWidget {
   const SensorReadingsView({super.key, this.api});
 
@@ -41,6 +42,8 @@ class _SensorReadingsViewState extends State<SensorReadingsView> {
         final entries = _viewModel.readings;
         final loading = entries == null && !_viewModel.failed;
         final hasData = entries != null && entries.isNotEmpty;
+        // The values are normalised for the chart: the moisture is divided by
+        // 100 and the temperature by 50, both clamped to 0-1.
         final values = hasData
             ? entries
                   .map((e) => (e.moisture / 100).clamp(0.0, 1.0).toDouble())

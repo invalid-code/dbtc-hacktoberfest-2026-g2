@@ -1,3 +1,5 @@
+"""The SQLAlchemy models: the sensors, their readings, the pumps and the water they used."""
+
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
@@ -5,6 +7,8 @@ from app.database import Base
 
 
 class Sensor(Base):
+    """The physical sensor devices, each owning a stream of readings."""
+
     __tablename__ = "sensor"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -13,6 +17,8 @@ class Sensor(Base):
 
 
 class SensorData(Base):
+    """One greenhouse reading: moisture, humidity and temperature at a point in time."""
+
     __tablename__ = "sensor_data"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -29,6 +35,8 @@ class SensorData(Base):
 
 
 class Pump(Base):
+    """The pumps of the greenhouse, seeded with the ids 1, 2 and 3."""
+
     __tablename__ = "pump"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -38,9 +46,13 @@ class Pump(Base):
 
 
 class PumpMode(Base):
+    """The mode row of a single pump, holding both the wanted and the last reported mode."""
+
     __tablename__ = "pump_mode"
 
     id = Column(Integer, primary_key=True, index=True)
+    # mode is the desired mode, observed_mode is what the device last reported
+    # and is written by the device poller
     mode = Column(Integer, nullable=False)
     observed_mode = Column(Integer, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)
@@ -50,6 +62,8 @@ class PumpMode(Base):
 
 
 class PumpHistory(Base):
+    """The water each pump used, kept to show the watering history and the daily total."""
+
     __tablename__ = "pump_history"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/core/widgets/chart_painter.dart';
 import 'package:frontend/core/widgets/panel.dart';
 
+/// The panel with the monthly water usage chart.
 class UsageChart extends StatelessWidget {
   const UsageChart({super.key, this.monthlyUsage, this.failed = false});
 

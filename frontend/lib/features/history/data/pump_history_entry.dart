@@ -1,3 +1,6 @@
+/// A watering record.
+///
+/// The json field names come straight from the API.
 class PumpHistoryEntry {
   const PumpHistoryEntry({
     required this.pump,

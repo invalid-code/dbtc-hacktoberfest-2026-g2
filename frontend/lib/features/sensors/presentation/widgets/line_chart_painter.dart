@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// Draws a line chart by hand, every point is labelled with its percentage.
 class LineChartPainter extends CustomPainter {
   const LineChartPainter({required this.values});
 

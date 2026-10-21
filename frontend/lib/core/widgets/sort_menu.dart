@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// The newest/oldest toggle, rendered as a chip in the panel header.
 class SortMenu extends StatelessWidget {
   const SortMenu({super.key, required this.onChanged});
 

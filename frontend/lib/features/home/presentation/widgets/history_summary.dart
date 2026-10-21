@@ -4,6 +4,7 @@ import 'package:frontend/core/widgets/formatting.dart';
 import 'package:frontend/core/widgets/panel.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 
+/// The history panel, the entries are split into today and yesterday.
 class HistorySummary extends StatelessWidget {
   const HistorySummary({super.key, this.history, this.failed = false});
 

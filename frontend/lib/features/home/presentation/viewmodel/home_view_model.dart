@@ -9,6 +9,8 @@ import 'package:frontend/features/sensors/data/sensor_reading.dart';
 import 'package:frontend/model/alert.dart';
 import 'package:frontend/model/pump_info.dart';
 
+/// Holds the state of the dashboard and notifies the view through a
+/// `ListenableBuilder`.
 class HomeViewModel extends ChangeNotifier {
   HomeViewModel({GreenhouseApi? api, SensorFeed? feed})
     : _api = api ?? GreenhouseApi(),
@@ -19,6 +21,8 @@ class HomeViewModel extends ChangeNotifier {
   StreamSubscription<SensorReading>? _sensorSub;
   bool _disposed = false;
 
+  // A null value means the request is still loading, the matching ...Failed
+  // flag means the request failed.
   GreenhouseSnapshot? snapshot;
   double? todayUsageLiters;
   List<Alert>? alerts;
@@ -39,6 +43,7 @@ class HomeViewModel extends ChangeNotifier {
           ? snapshot!.pumps[index].mode
           : null;
 
+  /// Loads everything in parallel and then connects the live feed.
   void start() {
     _loadInitial();
     _feed.connect();
@@ -117,6 +122,7 @@ class HomeViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// A live reading replaces the sensor of the snapshot, the pumps are kept.
   void _onSensorReading(SensorReading reading) {
     final current = snapshot;
     snapshot = GreenhouseSnapshot(
@@ -126,6 +132,7 @@ class HomeViewModel extends ChangeNotifier {
     _notify();
   }
 
+  /// Writes the mode to the API and then applies it to the local snapshot.
   Future<void> updatePumpMode(int pump, int mode) async {
     await _api.updatePumpMode(pump, mode);
     _applyPumpMode(pump, mode);
@@ -150,6 +157,8 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// One bucket per month of the current year, normalised so that the biggest
+  /// month is 1.0.
   static List<double> monthlyUsageFrom(List<PumpHistoryEntry> entries) {
     final year = DateTime.now().year;
     final totals = List<double>.filled(12, 0);

@@ -19,6 +19,11 @@ SensorReading? sensorReadingFromMessage(dynamic event) {
   }
 }
 
+/// The live sensor feed.
+///
+/// It subscribes to the same `/mc-ws/` endpoint the microcontroller publishes
+/// to, derives the websocket URL from the api base url by rewriting `http` to
+/// `ws`, and reconnects every 5 seconds.
 class SensorFeed {
   SensorFeed({String? baseUrl}) : _baseUrl = baseUrl ?? apiBaseUrl;
 
@@ -29,6 +34,7 @@ class SensorFeed {
   bool _disposed = false;
   final _controller = StreamController<SensorReading>.broadcast();
 
+  /// The readings as a broadcast stream, several listeners can share it.
   Stream<SensorReading> get readings => _controller.stream;
 
   void connect() {
@@ -71,6 +77,7 @@ class SensorFeed {
     _scheduleReconnect();
   }
 
+  /// Retries the connection in 5 seconds, only one retry is pending at a time.
   void _scheduleReconnect() {
     if (_disposed || _reconnectTimer != null) return;
     _reconnectTimer = Timer(const Duration(seconds: 5), () {

@@ -1,3 +1,7 @@
+/// An alert, the shape matches the schema the API returns.
+///
+/// The severity travels as a plain string, an unknown one falls back to
+/// `warning`.
 class Alert {
   const Alert({required this.message, required this.severity});
 

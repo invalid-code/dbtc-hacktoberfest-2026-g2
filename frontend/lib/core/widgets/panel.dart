@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 /// whatever they show.
 const panelContentHeight = 340.0;
 
+/// The card every dashboard section is built with.
+///
+/// `fillHeight` lets the body grow to fill the panel, the `actions` are
+/// rendered next to the title in the header.
 class Panel extends StatelessWidget {
   const Panel({super.key, 
     required this.title,

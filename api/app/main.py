@@ -1,3 +1,5 @@
+"""FastAPI application wiring: the app factory, CORS, the startup lifespan and the routers."""
+
 from contextlib import asynccontextmanager
 
 import asyncio
@@ -18,12 +20,18 @@ from app.services import device_service, pump_service
 
 
 def allowed_origins() -> list[str]:
+    """The CORS allow-list; FRONTEND_URL holds a comma-separated list of origins."""
     origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",")]
     return [origin for origin in origins if origin]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Startup bootstrap: create the missing tables and seed pumps 1/2/3 in FAST mode.
+
+    The device poll task only starts when DEVICE_URL is configured, so the API
+    runs without a microcontroller attached.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
@@ -47,6 +55,8 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins(),
+    # Starlette forbids credentials with a wildcard origin, so the "*"
+    # allow-list has to run without them
     allow_credentials=settings.FRONTEND_URL != "*",
     allow_methods=["*"],
     allow_headers=["Content-Type", "Authorization"],
@@ -61,4 +71,5 @@ app.include_router(websocket_router.router)
 
 @app.get("/health")
 async def health():
+    """Liveness probe."""
     return {"status": "ok"}

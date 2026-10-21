@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 
+/// Holds the sensor readings shown by the sensor readings screen.
 class SensorReadingsViewModel extends ChangeNotifier {
   SensorReadingsViewModel({GreenhouseApi? api})
     : _api = api ?? GreenhouseApi();

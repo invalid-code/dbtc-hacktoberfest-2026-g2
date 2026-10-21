@@ -1,3 +1,5 @@
+"""Reconciles the pump modes stored in the database with the modes the device is running."""
+
 import asyncio
 import logging
 
@@ -15,6 +17,7 @@ DEVICE_TIMEOUT_SECONDS = 5.0
 
 
 def device_configured() -> bool:
+    """Whether a microcontroller is configured to be polled at all."""
     return bool(settings.DEVICE_URL)
 
 
@@ -31,6 +34,8 @@ async def fetch_modes(client: httpx.AsyncClient) -> dict[int, str]:
             pump_id = int(raw_pump)
         except (TypeError, ValueError):
             continue
+        # the device HTTP API speaks mode names while the database speaks
+        # ordinals, so every mode is converted on the way in
         if isinstance(raw_mode, int):
             observed[pump_id] = INDEX_MODE.get(raw_mode, "")
             continue
@@ -44,6 +49,7 @@ async def push_mode(client: httpx.AsyncClient, pump_id: int, mode: int) -> str:
     """Ask the microcontroller to switch a pump to a mode."""
     response = await client.post(
         f"{settings.DEVICE_URL.rstrip('/')}/mode",
+        # the device wants a mode name, the database stores the ordinal
         json={"pump": pump_id, "mode": INDEX_MODE.get(mode, "FAST")},
     )
     response.raise_for_status()

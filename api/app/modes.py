@@ -1,3 +1,5 @@
+"""The shared pump-mode ordinal contract between the API, the Arduino sketch and the frontend."""
+
 from enum import Enum
 
 

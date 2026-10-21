@@ -1,3 +1,5 @@
+"""Keeps the set of connected sockets and broadcasts readings to all of them."""
+
 from fastapi import WebSocket
 
 from app.models import SensorData
@@ -6,6 +8,7 @@ active_websockets: set[WebSocket] = set()
 
 
 async def broadcast_sensor_data(sensor_data: SensorData) -> None:
+    """Send a reading to every connected client, dropping the ones that fail to receive it."""
     disconnected: list[WebSocket] = []
     for client in active_websockets:
         try:

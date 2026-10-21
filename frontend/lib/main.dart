@@ -7,6 +7,10 @@ import 'package:frontend/router/app_router.dart';
 
 void main() => runApp(const GreenhouseApp());
 
+/// The root of the app: it owns the router and the theme.
+///
+/// The `api` and `feed` factories are injection seams, the tests override them
+/// to plug a fake API and a fake feed in.
 class GreenhouseApp extends StatefulWidget {
   const GreenhouseApp({super.key, this.api, this.feed});
 
@@ -32,7 +36,9 @@ class _GreenhouseAppState extends State<GreenhouseApp> {
     debugShowCheckedModeBanner: false,
     title: 'Greenhouse Control',
     theme: ThemeData(
+      // The deep green seed drives every accent colour of the app.
       colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff2d7600)),
+      // The pale green backdrop the panels sit on.
       scaffoldBackgroundColor: const Color(0xfff0fae7),
       fontFamily: 'Roboto',
       useMaterial3: true,

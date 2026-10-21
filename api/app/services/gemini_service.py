@@ -1,3 +1,5 @@
+"""Asks Gemini for advice about the greenhouse, using the stored state as context."""
+
 import logging
 
 import httpx
@@ -33,10 +35,12 @@ RECENT_WATERING_COUNT = 5
 
 
 def gemini_configured() -> bool:
+    """Whether an API key is set, and with it whether Gemini can be called at all."""
     return bool(settings.GEMINI_API_KEY)
 
 
 def _require_configured() -> None:
+    """Reject the request with a 503 when no API key is set."""
     if not gemini_configured():
         raise HTTPException(
             status_code=503,

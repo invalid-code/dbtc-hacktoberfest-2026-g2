@@ -9,6 +9,10 @@ import 'package:frontend/features/home/presentation/widgets/history_summary.dart
 import 'package:frontend/features/home/presentation/widgets/pump_card.dart';
 import 'package:frontend/features/home/presentation/widgets/usage_chart.dart';
 
+/// The dashboard.
+///
+/// It owns its `HomeViewModel`, which is created in `initState` and disposed
+/// with the view.
 class HomeView extends StatefulWidget {
   const HomeView({super.key, this.api, this.feed});
 
@@ -118,6 +122,8 @@ class _HomeViewState extends State<HomeView> {
                                   ),
                                 ),
                                 const SizedBox(height: 14),
+                                // The three pumps are hard coded, the pumps the
+                                // API returns do not drive this list.
                                 GridView.count(
                                   crossAxisCount: columns,
                                   shrinkWrap: true,

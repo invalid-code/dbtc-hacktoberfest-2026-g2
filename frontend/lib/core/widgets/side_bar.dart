@@ -3,6 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:frontend/router/routes.dart';
 
+/// The only navigation control of the app.
+///
+/// It calls `context.go`, so a tap replaces the whole screen instead of pushing
+/// a route on top of it.
 class SideBar extends StatelessWidget {
   const SideBar({super.key});
 

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 
+/// Holds the watering entries and the sort order.
 class WateringHistoryViewModel extends ChangeNotifier {
   WateringHistoryViewModel({GreenhouseApi? api})
     : _api = api ?? GreenhouseApi();
@@ -13,6 +14,8 @@ class WateringHistoryViewModel extends ChangeNotifier {
   bool failed = false;
   bool newestFirst = true;
 
+  /// A copy of the entries sorted by the recorded time, entries without a time
+  /// sort as the epoch.
   List<PumpHistoryEntry>? get sortedHistory {
     final entries = history;
     if (entries == null) return null;

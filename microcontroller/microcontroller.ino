@@ -1,5 +1,7 @@
 // TODO need to know how much water was used and send the data to the backend
 
+// ---- Libraries, includes and pin definitions --------------------------------
+
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 #include <WebServer.h>
@@ -15,11 +17,14 @@
 
 #include "secrets.h"
 
+// One DHT11 temperature/humidity sensor per zone.
 #define DHTPIN1 4
 #define DHTPIN2 16
 #define DHTPIN3 17
 
 #define DHTTYPE DHT11
+
+// ---- Sensor and pump objects, constants and state ---------------------------
 
 DHT tempSensor1(DHTPIN1, DHTTYPE);
 DHT tempSensor2(DHTPIN2, DHTTYPE);
@@ -35,10 +40,15 @@ enum OperatingMode {
   SPRINKLE
 };
 
+// Pump output pins: pump 1 -> 25, pump 2 -> 26, pump 3 -> 27.
 const int PUMP1_PIN = 25;
 const int PUMP2_PIN = 26;
 const int PUMP3_PIN = 27;
 
+// Sensor input pins: zone 1 -> moisture 36 / water level 39,
+// zone 2 -> moisture 35 / water level 32, zone 3 -> moisture 25 / water level 26.
+// Note that pins 25 and 26 are used both as a pump output and as an analog input
+// for zone 3.
 const int MOISTURE_PIN_1 = 36;
 const int WATER_LEVEL_PIN_1 = 39;
 const int MOISTURE_PIN_2 = 35;
@@ -46,24 +56,34 @@ const int WATER_LEVEL_PIN_2 = 32;
 const int MOISTURE_PIN_3 = 25;
 const int WATER_LEVEL_PIN_3 = 26;
 
+// Raw ADC range of the capacitive soil moisture sensors (0-2800), mapped to 0-100 %.
 const int MOISTURE_LOW_VAL = 0;
 const int MOISTURE_HIGH_VAL = 2800;
+// Raw ADC range of the water level sensors (0-1400). These sensors are declared
+// and pin-moded but never read.
 const int WATER_LEVEL_LOW_VAL = 0;
 const int WATER_LEVEL_HIGH_VAL = 1400;
 
+// How long each mode runs the pump, in milliseconds.
 const int FAST_RUN_MS = 750;
 const int SLOW_RUN_MS = 750;
 const int DRIP_RUN_MS = 150;
 
+// PWM duty cycle (0-255) used by the slow mode.
 const int SLOW_PWM = 120;
 
+// Measured pump flow rate, used to work out how much water a run used.
 const float PUMP_LITRES_PER_SECOND = 0.008f;
 
+// The Halloween easter egg window: October (tm_mon is zero based) and the 31st.
 const int HALLOWEEN_MONTH = 9;
 const int HALLOWEEN_DAY = 31;
+// Number of days before Halloween on which the haunting starts.
 const int HAUNTING_WINDOW_DAYS = 14;
+// Highest chance of sending a garbled reading, reached on Halloween night.
 const float MAX_GARBLED_CHANCE = 0.8f;
 
+// The mode each pump is currently running.
 int curMode1 = FAST;
 int curMode2 = FAST;
 int curMode3 = FAST;
@@ -79,8 +99,12 @@ struct GarbledReading {
   float temperature;
 };
 
+// Queue of pending water usage reports, drained by the usage reporter task.
 QueueHandle_t usageQueue = nullptr;
 
+// ---- Mode helpers ----------------------------------------------------------
+
+// The device speaks mode names over HTTP, while the database stores ordinals.
 const char* modeName(int mode) {
   switch (mode) {
     case SLOW:
@@ -94,6 +118,7 @@ const char* modeName(int mode) {
   }
 }
 
+// Inverse of modeName(): turns a mode name back into its ordinal.
 int modeFromName(const String& name) {
   if (name.equalsIgnoreCase("SLOW")) return SLOW;
   if (name.equalsIgnoreCase("DRIP")) return DRIP;
@@ -101,6 +126,7 @@ int modeFromName(const String& name) {
   return FAST;
 }
 
+// Returns the pointer to the current mode of a pump, or null for an unknown pump.
 int* modeSlotFor(int pumpId) {
   switch (pumpId) {
     case 1:
@@ -113,6 +139,7 @@ int* modeSlotFor(int pumpId) {
   return nullptr;
 }
 
+// The output pin of a pump.
 int pumpPinFor(int pumpId) {
   switch (pumpId) {
     case 1:
@@ -125,6 +152,7 @@ int pumpPinFor(int pumpId) {
   return -1;
 }
 
+// How much water a run in each mode uses, from the flow rate and the timings.
 float modeLitres(int mode) {
   switch (mode) {
     case FAST:
@@ -140,6 +168,10 @@ float modeLitres(int mode) {
   return 0.0f;
 }
 
+// ---- WebSocket event handling -----------------------------------------------
+
+// Callback for the socket library; the device only prints what arrives, it never
+// reads from the socket.
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
@@ -165,6 +197,9 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
+// ---- The device HTTP server (/mode handlers) ---------------------------------
+
+// The API polls this to learn which mode each pump is running.
 void handleGetMode() {
   String json = "{\"modes\":{";
   json += "\"1\":\"" + String(modeName(curMode1)) + "\",";
@@ -174,6 +209,7 @@ void handleGetMode() {
   deviceServer.send(200, "application/json", json);
 }
 
+// The API pushes the desired mode here; it accepts a JSON body or form arguments.
 void handlePostMode() {
   int pumpId = 0;
   int mode = FAST;
@@ -214,6 +250,9 @@ void handlePostMode() {
   deviceServer.send(200, "application/json", json);
 }
 
+// ---- Water usage reporting --------------------------------------------------
+
+// Posts the water usage to the API.
 void sendPumpWaterUsage(int pumpId, float litres) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Skipping pump water usage, wifi is down");
@@ -243,6 +282,7 @@ void sendPumpWaterUsage(int pumpId, float litres) {
   http.end();
 }
 
+// Puts the report on the queue so the HTTP call never blocks the sensor loop.
 void reportWaterUsage(int pumpId, float litres) {
   if (usageQueue == nullptr) {
     return;
@@ -253,6 +293,7 @@ void reportWaterUsage(int pumpId, float litres) {
   }
 }
 
+// The task that drains the queue and does the actual POST.
 void usageReporterTask(void* arg) {
   (void)arg;
   for (;;) {
@@ -263,6 +304,9 @@ void usageReporterTask(void* arg) {
   }
 }
 
+// ---- Pump actuation ---------------------------------------------------------
+
+// Fast mode: full power for FAST_RUN_MS.
 void fast(int pumpPin) {
   Serial.println("-- Fast Flow Mode --");
   digitalWrite(pumpPin, HIGH);
@@ -270,6 +314,7 @@ void fast(int pumpPin) {
   digitalWrite(pumpPin, LOW);
 }
 
+// Slow mode: reduced power (SLOW_PWM) for SLOW_RUN_MS.
 void slow(int pumpPin) {
   Serial.println("-- Slow Flow Mode --");
   analogWrite(pumpPin, SLOW_PWM);
@@ -277,6 +322,7 @@ void slow(int pumpPin) {
   analogWrite(pumpPin, 0);
 }
 
+// Drip mode: a short DRIP_RUN_MS burst followed by a pause.
 void drip(int pumpPin) {
   Serial.println("-- Drip Flow Mode --");
   digitalWrite(pumpPin, HIGH);
@@ -286,10 +332,14 @@ void drip(int pumpPin) {
   delay(2500);
 }
 
+// Sprinkle mode: not implemented, so the pump never actually runs here.
 void sprinkle(int pumpPin) {
   Serial.println("-- Sprinkle Flow Mode --");
 }
 
+// ---- Sensor publishing ------------------------------------------------------
+
+// Builds and sends the reading payload over the WebSocket.
 void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, float humiditySensorValue, bool garbled) {
   if (WiFi.status() == WL_CONNECTED) {
     JsonDocument doc;
@@ -310,6 +360,9 @@ void sendSensorData(int sensor, int moisturePercent, float tempSensorValue, floa
   }
 }
 
+// ---- The Halloween easter egg -----------------------------------------------
+
+// The days left until the 31st of October.
 int daysUntilHalloween() {
   time_t now = 0;
   time(&now);
@@ -332,6 +385,7 @@ int daysUntilHalloween() {
   return (int)round(days);
 }
 
+// 0 outside the 14 day window, otherwise a ramp from 0 to 1 towards Halloween.
 float halloweenHaunting() {
   int days = daysUntilHalloween();
   if (days < 0 || days > HAUNTING_WINDOW_DAYS) {
@@ -340,6 +394,7 @@ float halloweenHaunting() {
   return (float)(HAUNTING_WINDOW_DAYS - days) / (float)HAUNTING_WINDOW_DAYS;
 }
 
+// Rolls against the haunting level, so the chance reaches 80% on Halloween night.
 bool shouldSendGarbledData() {
   float haunting = halloweenHaunting();
   if (haunting <= 0.0f) {
@@ -349,6 +404,7 @@ bool shouldSendGarbledData() {
   return roll < (uint32_t)(haunting * MAX_GARBLED_CHANCE * 1000.0f);
 }
 
+// Invents nonsense values for a haunted reading.
 GarbledReading garbledReading() {
   GarbledReading reading;
   reading.moisture = (int)random(101, 1000);
@@ -357,6 +413,7 @@ GarbledReading garbledReading() {
   return reading;
 }
 
+// Publishes either the real reading or a garbled one.
 void publishSensorReading(int sensor, int moisturePercent, float tempValue, float humidityValue) {
   if (shouldSendGarbledData()) {
     GarbledReading haunted = garbledReading();
@@ -367,6 +424,7 @@ void publishSensorReading(int sensor, int moisturePercent, float tempValue, floa
   sendSensorData(sensor, moisturePercent, tempValue, humidityValue, false);
 }
 
+// Runs the pump in the given mode and then reports the water usage.
 void activatePumpMode(int pumpId, int pumpPin, int curMode) {
   switch (curMode) {
     case FAST:
@@ -385,6 +443,8 @@ void activatePumpMode(int pumpId, int pumpPin, int curMode) {
   reportWaterUsage(pumpId, modeLitres(curMode));
 }
 
+// Runs the pump when the soil moisture is at or below 30. Note that both branches
+// do the same thing, so the temperature and humidity conditions have no effect.
 void openPump(int pumpId, int moisturePercent, float tempValue, float humidityValue, int curMode) {
   if (moisturePercent <= 30 && tempValue > 30.0 && humidityValue > 70.0) {
     activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
@@ -393,6 +453,10 @@ void openPump(int pumpId, int moisturePercent, float tempValue, float humidityVa
   }
 }
 
+// ---- Setup and the main loop ------------------------------------------------
+
+// Connects to Wi-Fi, opens the socket, starts the HTTP server and the usage
+// task, and initialises the sensors.
 void setup() {
   Serial.begin(115200);
 
@@ -409,6 +473,7 @@ void setup() {
   Serial.print("Connected to WiFi network with IP Address: ");
   Serial.println(WiFi.localIP());
 
+  // The path needs its trailing slash: the API does not redirect WebSocket requests.
   webSocket.begin(WS_SERVER_URL, WS_SERVER_PORT, WS_PATH);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
@@ -444,6 +509,8 @@ void setup() {
   Serial.println("ESP32 Watering System Initialized");
 }
 
+// Services the socket and the HTTP server, and every 10 seconds reads each zone,
+// publishes the reading and checks whether to water.
 void loop() {
   webSocket.loop();
   deviceServer.handleClient();
@@ -462,6 +529,8 @@ void loop() {
   if (millis() - lastSent > 10000) {
     lastSent = millis();
 
+    // The pump decision always uses the real readings, even while a garbled
+    // reading is being published, so the greenhouse keeps watering itself.
     int moisture1Value = analogRead(MOISTURE_PIN_1);
     int moisture1Percent = map(moisture1Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
     moisture1Percent = constrain(moisture1Percent, 0, 100);

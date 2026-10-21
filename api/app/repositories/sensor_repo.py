@@ -1,3 +1,5 @@
+"""The only layer that talks to the database for sensors and their readings."""
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,11 +12,13 @@ async def get_all_sensors(db: AsyncSession) -> list[Sensor]:
 
 
 async def get_all_sensor_data(db: AsyncSession) -> list[SensorData]:
+    """Every reading, with no ordering and no pagination."""
     result = await db.execute(select(SensorData))
     return list(result.scalars().all())
 
 
 async def get_latest_sensor_data(db: AsyncSession) -> SensorData | None:
+    """The most recently recorded reading, or None when nothing was ever recorded."""
     result = await db.execute(
         select(SensorData).order_by(SensorData.recorded_at.desc()).limit(1)
     )
@@ -24,6 +28,7 @@ async def get_latest_sensor_data(db: AsyncSession) -> SensorData | None:
 async def get_recent_sensor_data(
     db: AsyncSession, limit: int = 10
 ) -> list[SensorData]:
+    """The last readings, newest first."""
     result = await db.execute(
         select(SensorData).order_by(SensorData.recorded_at.desc()).limit(limit)
     )
@@ -31,6 +36,7 @@ async def get_recent_sensor_data(
 
 
 async def get_or_create_sensor(db: AsyncSession, sensor_id: int) -> Sensor:
+    """The sensor row of that id, created on the fly when it is still unknown."""
     sensor = await db.get(Sensor, sensor_id)
     if sensor is None:
         sensor = Sensor(id=sensor_id)

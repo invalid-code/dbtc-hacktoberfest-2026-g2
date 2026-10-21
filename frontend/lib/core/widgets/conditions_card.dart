@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/widgets/formatting.dart';
 
+/// The "Current Conditions" panel: today's water usage, soil moisture,
+/// humidity and temperature.
 class ConditionsCard extends StatelessWidget {
   const ConditionsCard({
     super.key,
@@ -45,6 +47,8 @@ class ConditionsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
+          // The microcontroller garbles the readings as a halloween easter egg,
+          // the banner explains the numbers cannot be trusted.
           if (snapshot?.sensor?.garbled == true) ...[
             _SpookyBanner(),
             const SizedBox(height: 14),
@@ -112,6 +116,7 @@ class ConditionsCard extends StatelessWidget {
   }
 }
 
+/// The banner shown when the latest reading is garbled.
 class _SpookyBanner extends StatelessWidget {
   const _SpookyBanner();
 

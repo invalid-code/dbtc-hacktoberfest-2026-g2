@@ -1,9 +1,17 @@
+"""The Pydantic request and response models of the HTTP surface."""
+
 from datetime import datetime
 
 from pydantic import BaseModel
 
 
 class SensorDataRequest(BaseModel):
+    """The payload the microcontroller publishes: sensor, moisture_level, humidity, temperature.
+
+    recorded_at is optional and defaults to the moment the service stores the
+    reading, so the device does not have to keep time.
+    """
+
     sensor: int
     moisture_level: int
     humidity: int
@@ -13,11 +21,15 @@ class SensorDataRequest(BaseModel):
 
 
 class PumpModeRequest(BaseModel):
+    """The mode to switch a pump to; both fields are required and the mode is an ordinal."""
+
     pump: int
     pump_mode: int
 
 
 class PumpHistoryRequest(BaseModel):
+    """A watering to record; the pump is optional and recorded_at defaults to now."""
+
     liters: float
     recorded_at: datetime | None = None
     pump: int | None = None

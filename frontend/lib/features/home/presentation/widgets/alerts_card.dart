@@ -5,6 +5,7 @@ import 'package:frontend/model/alert.dart';
 
 const _spookyColor = Color(0xff6a1b9a);
 
+/// The alerts panel of the dashboard.
 class AlertsCard extends StatelessWidget {
   const AlertsCard({super.key, this.alerts, this.failed = false});
 
@@ -49,6 +50,8 @@ class AlertsCard extends StatelessWidget {
   }
 }
 
+/// One alert, the severity decides the style: `spooky` is purple with a
+/// sparkle icon, `critical` is dark red and anything else is muted.
 class _AlertMessage extends StatelessWidget {
   const _AlertMessage({required this.alert});
 

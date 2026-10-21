@@ -1,3 +1,7 @@
+/// A sensor reading, the shape comes from the API and from the websocket.
+///
+/// The `garbled` flag marks a halloween easter egg reading that must not be
+/// trusted.
 class SensorReading {
   const SensorReading({
     required this.moisture,

@@ -7,6 +7,7 @@ import 'package:frontend/core/widgets/side_bar.dart';
 import 'package:frontend/core/widgets/sort_menu.dart';
 import 'package:frontend/features/history/presentation/viewmodel/watering_history_view_model.dart';
 
+/// The full list of the waterings, with the sort toggle in the panel header.
 class WateringHistoryView extends StatefulWidget {
   const WateringHistoryView({super.key, this.api});
 

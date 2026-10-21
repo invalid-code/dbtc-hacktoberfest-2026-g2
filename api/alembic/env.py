@@ -60,6 +60,8 @@ def run_migrations_online() -> None:
 
     """
     url = settings.DB_CONN_STR
+    # alembic runs synchronously, so the asyncpg driver of the app is swapped
+    # for the blocking psycopg2 one
     if "postgresql+asyncpg" in url:
         url = url.replace("postgresql+asyncpg", "postgresql+psycopg2")
 

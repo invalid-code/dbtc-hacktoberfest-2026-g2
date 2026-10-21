@@ -1,3 +1,5 @@
+"""Evaluates the greenhouse alerts against the latest sensor reading only."""
+
 from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,11 @@ SPOOKY_ALERT_MESSAGE = (
 
 
 async def evaluate_alerts(db: AsyncSession) -> list[dict[str, str]]:
+    """Raise an alert on low humidity, low moisture or a stale reading.
+
+    A garbled reading short-circuits the threshold alerts because its numbers
+    are fake and say nothing about the greenhouse.
+    """
     latest = await sensor_repo.get_latest_sensor_data(db)
     if latest is None:
         return [{"message": "No sensor readings yet", "severity": "warning"}]

@@ -1,3 +1,5 @@
+"""The pump behaviour: the pumps, their modes, the watering history and today's usage."""
+
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,7 @@ async def get_pumps(db: AsyncSession) -> list[Pump]:
 
 
 async def ensure_pumps(db: AsyncSession, pump_ids: tuple[int, ...] = (1, 2, 3)) -> None:
+    """Create the default pumps 1, 2 and 3 if they are not in the database yet."""
     for pump_id in pump_ids:
         await pump_repo.get_or_create_pump(db, pump_id)
     await db.commit()
@@ -25,6 +28,7 @@ async def ensure_pump_modes(
     db: AsyncSession,
     pump_ids: tuple[int, ...] = (1, 2, 3),
 ) -> None:
+    """Give the default pumps 1, 2 and 3 a mode row, in FAST mode to start with."""
     await pump_repo.ensure_pump_modes(db, pump_ids)
 
 
@@ -45,6 +49,7 @@ async def create_pump_history(
     db: AsyncSession,
     body: PumpHistoryRequest,
 ) -> PumpHistory:
+    """Record a watering, taking the moment of the reading as now when none was sent."""
     recorded_at = body.recorded_at or datetime.now()
     return await pump_repo.create_pump_history(
         db=db,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// The empty state shown when there is no watering history.
 class EmptyHistory extends StatelessWidget {
   const EmptyHistory({super.key});
 

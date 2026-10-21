@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+/// Draws the monthly water usage chart by hand, there is no charting library.
 class ChartPainter extends CustomPainter {
   const ChartPainter({this.values});
 
   final List<double>? values;
 
+  /// The placeholder series drawn while there is no data yet.
   static const fallbackValues = [
     0.72,
     0.51,

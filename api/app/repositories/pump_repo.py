@@ -1,3 +1,5 @@
+"""The only layer that talks to the database for the pumps, their modes and their waterings."""
+
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
@@ -40,6 +42,7 @@ async def create_or_update_pump_mode(
     pump_id: int,
     mode: int,
 ) -> PumpMode:
+    """Set the desired mode of a pump, creating its mode row when it has none yet."""
     db_pump_mode = await get_pump_mode_by_pump_id(db, pump_id)
 
     if db_pump_mode:
@@ -57,6 +60,7 @@ async def ensure_pump_modes(
     db: AsyncSession,
     pump_ids: tuple[int, ...] = (1, 2, 3),
 ) -> None:
+    """Give the default pumps 1, 2 and 3 a mode row, in FAST mode to start with."""
     for pump_id in pump_ids:
         await get_or_create_pump(db, pump_id)
         if await get_pump_mode_by_pump_id(db, pump_id) is None:
@@ -69,6 +73,7 @@ async def record_observed_mode(
     pump_id: int,
     observed_mode: int,
 ) -> PumpMode | None:
+    """Store the mode the device last reported and when it was seen, ignoring unknown pumps."""
     db_pump_mode = await get_pump_mode_by_pump_id(db, pump_id)
     if db_pump_mode is None:
         return None
@@ -91,6 +96,7 @@ async def record_observed_modes(
 
 
 async def get_pump_history(db: AsyncSession) -> list[PumpHistory]:
+    """Every watering, newest first."""
     result = await db.execute(
         select(PumpHistory).order_by(PumpHistory.recorded_at.desc())
     )
@@ -117,6 +123,7 @@ async def create_pump_history(
 
 
 async def get_today_usage_liters(db: AsyncSession) -> float:
+    """The litres used since local midnight."""
     start_of_day = datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )

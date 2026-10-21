@@ -1,3 +1,5 @@
+"""The sensor behaviour: the sensors themselves and the readings they report."""
+
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +21,11 @@ async def save_sensor_data(
     body: SensorDataRequest,
     db: AsyncSession,
 ) -> SensorData:
+    """Store a reading, falling back to now when the device sent no timestamp.
+
+    The sensor row is created on demand, so a reading for a sensor that was
+    never seen before still lands in the database.
+    """
     await sensor_repo.get_or_create_sensor(db, body.sensor)
     recorded_at = body.recorded_at or datetime.now()
     return await sensor_repo.create_sensor_data(

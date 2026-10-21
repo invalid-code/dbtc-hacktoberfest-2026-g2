@@ -1,3 +1,7 @@
+// The single HTTP entry point of the app.
+//
+// It acts both as the client and as the repository: the views only ever talk
+// to the API through GreenhouseApi.
 import 'dart:convert';
 
 import 'package:frontend/features/history/data/pump_history_entry.dart';
@@ -11,12 +15,20 @@ const _apiBaseUrlRaw = String.fromEnvironment(
   defaultValue: 'http://localhost:8000',
 );
 
+/// The base URL of the API, it comes from the `API_BASE_URL` compile time
+/// define.
+///
+/// The trailing slash is stripped because every path used here already carries
+/// one.
 final apiBaseUrl = _apiBaseUrlRaw.endsWith('/')
     ? _apiBaseUrlRaw.substring(0, _apiBaseUrlRaw.length - 1)
     : _apiBaseUrlRaw;
 
+/// How long a request may take before it is given up on.
 const _requestTimeout = Duration(seconds: 10);
 
+/// The state of the greenhouse: the latest sensor reading and the pumps with
+/// the mode each one runs in.
 class GreenhouseSnapshot {
   const GreenhouseSnapshot({required this.sensor, required this.pumps});
 
@@ -24,6 +36,9 @@ class GreenhouseSnapshot {
   final List<PumpInfo> pumps;
 }
 
+/// Talks to the greenhouse API.
+///
+/// The client is injectable so the tests can plug a `MockClient` in.
 class GreenhouseApi {
   GreenhouseApi({http.Client? client}) : _client = client ?? http.Client();
 
@@ -34,6 +49,7 @@ class GreenhouseApi {
     return readings.isEmpty ? null : readings.last;
   }
 
+  /// The readings, oldest first: the API returns them unordered.
   Future<List<SensorReading>> loadSensorReadings() async {
     final response = await _get('/sensor/data/');
     return _asList(response)
@@ -65,6 +81,7 @@ class GreenhouseApi {
     return modes;
   }
 
+  /// Sets the mode of a pump, the mode is sent as its ordinal.
   Future<void> updatePumpMode(int pump, int pumpMode) async {
     await _request(
       '/pump/mode/',
@@ -106,6 +123,7 @@ class GreenhouseApi {
     return response.whereType<Map<String, dynamic>>().toList();
   }
 
+  /// A GET request, a status outside 2xx throws.
   Future<dynamic> _get(String path) async {
     final response = await _client
         .get(
@@ -121,6 +139,8 @@ class GreenhouseApi {
     return _decode(response);
   }
 
+  /// A request with a body. Only PUT is supported, any other method throws an
+  /// `UnsupportedError`, and a status outside 2xx throws.
   Future<void> _request(
     String path, {
     required String method,
