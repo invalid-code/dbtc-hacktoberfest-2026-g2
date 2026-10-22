@@ -589,7 +589,7 @@ Fixtures:
 | `db_session` | A database session for unit tests                                                        |
 | `client`     | An `httpx.AsyncClient` talking to the app in process over `ASGITransport`                |
 
-The suite covers 103 tests:
+The suite covers 111 tests:
 
 |            File             | Tests |                                                    What it covers                                                    |
 |-----------------------------|-------|----------------------------------------------------------------------------------------------------------------------|
@@ -599,10 +599,11 @@ The suite covers 103 tests:
 | `test_pump_service.py`      |   8   | Pump and mode seeding, mode updates, history ordering, today's usage                                                 |
 | `test_sensor_service.py`    |   6   | Field persistence, the garbled flag, explicit timestamps, auto-created sensors, "latest" and "recent" ordering       |
 | `test_modes_and_schemas.py` |   8   | The mode order matches the microcontroller's enum, schema defaults and validation errors                             |
-| `test_logging.py`           |   8   | The json formatter, the request id filter, the log level, and the request and error logs of the middleware           |
+| `test_logging.py`           |  10   | The json formatter, the request id filter, the log level, and the request and error logs of the middleware           |
 | `test_weather_service.py`   |   9   | The forecast and the climate are read from the payloads of the source, and a source that fails is reported           |
 | `test_irrigation_service.py`|  23   | The demand the weather brings, the limits of the parameters, the readings Gemini sees and the parameters that are written |
-| `test_gemini_service.py`     |   7   | The prompt Gemini gets, the json it is asked for, and the answers it may give back                        |
+| `test_gemini_service.py`     |   9   | The prompt Gemini gets, the json it is asked for, and the answers it may give back                        |
+| `test_regression.py`        |   8   | The dashboard workflow, paging, averaged series, time windows, alerts and today's usage end to end                    |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

@@ -416,7 +416,7 @@ cd frontend
 flutter test
 ```
 
-The suite covers 62 tests:
+The suite covers 68 tests:
 
 | File                          | Tests |                                        What it covers                                        |
 |-------------------------------|-------|----------------------------------------------------------------------------------------------|
@@ -427,6 +427,7 @@ The suite covers 62 tests:
 | `test/sensor_feed_test.dart`  |   6   | Parsing socket messages, ignoring non-readings, the feed stops after `dispose()`             |
 | `test/view_models_test.dart`  |  16   | Loading state, per-endpoint failure flags, live updates, mode updates, the time ranges      |
 | `test/widget_test.dart`       |   8   | The three screens, navigation, the empty and error states, the spooky banner, the filter    |
+| `test/regression_test.dart`   |   6   | A pump mode round trip, live readings, the cached trend series and the paging contract      |
 
 `test/support/fakes.dart` holds the shared harness:
 
