@@ -9,7 +9,8 @@ class SensorDataRequest(BaseModel):
     """The payload the microcontroller publishes: sensor, moisture_level, humidity, temperature.
 
     recorded_at is optional and defaults to the moment the service stores the
-    reading, so the device does not have to keep time.
+    reading, so the device does not have to keep time. garbled marks the
+    readings the device makes up for the halloween easter egg.
     """
 
     sensor: int

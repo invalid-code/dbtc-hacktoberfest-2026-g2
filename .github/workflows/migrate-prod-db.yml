@@ -1,0 +1,91 @@
+name: Migrate prod database
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only one migration may touch the prod database at a time. A push that
+# arrives while a migration runs waits for the running one to finish.
+concurrency:
+  group: prod-db-migration
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: api/.python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+
+      - name: Install the dependencies
+        run: uv sync --frozen
+
+      - name: Run the test suite
+        run: uv run --no-sync python -m pytest -q
+
+  migrate:
+    name: Alembic upgrade head
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: api/.python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+
+      - name: Install the dependencies
+        run: uv sync --frozen --no-dev
+
+      - name: Check the prod connection string
+        env:
+          PROD_DB_CONN_STR: ${{ secrets.PROD_DB_CONN_STR }}
+        run: |
+          if [ -z "$PROD_DB_CONN_STR" ]; then
+            echo "::error::The PROD_DB_CONN_STR secret is missing. Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+      - name: Run the migrations
+        env:
+          DB_CONN_STR: ${{ secrets.PROD_DB_CONN_STR }}
+        run: |
+          echo "Revision before the upgrade:"
+          uv run --no-sync alembic current
+          uv run --no-sync alembic upgrade head
+          echo "Revision after the upgrade:"
+          uv run --no-sync alembic current

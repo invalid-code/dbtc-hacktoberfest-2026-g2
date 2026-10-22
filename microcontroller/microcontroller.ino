@@ -1,5 +1,3 @@
-// TODO need to know how much water was used and send the data to the backend
-
 // ---- Libraries, includes and pin definitions --------------------------------
 
 #include <WiFi.h>
@@ -46,8 +44,7 @@ const int PUMP2_PIN = 26;
 const int PUMP3_PIN = 27;
 
 // Sensor input pins: zone 1 -> 36, zone 2 -> 39, zone 3 -> 34.
-// Note that pin 25 is used both as a pump output and as an analog input for
-// zone 3.
+// No pin is used twice: the pumps are on the digital outputs 25, 26 and 27.
 const int MOISTURE_PIN_1 = 36;
 const int MOISTURE_PIN_2 = 39;
 const int MOISTURE_PIN_3 = 34;

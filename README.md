@@ -240,6 +240,25 @@ Set `GEMINI_API_KEY` to a Google AI Studio key to enable the AI endpoints, and
 optionally `GEMINI_MODEL` to pick a different model (default
 `gemini-3.8-flash`).
 
+### Automated migrations on `main`
+
+`.github/workflows/migrate-prod-db.yml` runs the Alembic migrations against
+the production database on every push to `main`: the test suite runs first,
+then `alembic upgrade head` is applied to the prod database. The workflow can
+also be started by hand from the Actions tab.
+
+The prod connection string is read from a repository secret, so it never
+enters the repository. Add it once under
+**Settings → Secrets and variables → Actions**:
+
+| Secret             | Value                                                                                  |
+|--------------------|----------------------------------------------------------------------------------------|
+| `PROD_DB_CONN_STR` | The prod database URL, in the same form as `DB_CONN_STR`, e.g. `postgresql+asyncpg://user:password@host/database` |
+
+The secret can also live in a GitHub environment named `production`; the
+workflow uses that environment, so environment-level protections (required
+reviewers) apply to the migration.
+
 ## Deploying the frontend
 
 Build the Flutter app with the deployed API origin, without a trailing slash:
@@ -301,9 +320,9 @@ flutter test
 ## Current limitations
 
 - **No authentication.** Every REST endpoint and the WebSocket are open. A JWT
-  login system existed once and was removed in migration
-  `8b2d48567ac2`; nothing replaced it. Do not expose the API to the public
-  internet without adding auth first.
+  login system existed once and was removed; the schema has no user tables at
+  all now. Nothing replaced it. Do not expose the API to the public internet
+  without adding auth first.
 - **`GET /sensor/data/` returns the whole table**, with no pagination, filter
   or ordering. It will grow without bound.
 - **The pump list in the dashboard is hard-coded** to three cards in
@@ -312,5 +331,3 @@ flutter test
 - **The `/gemini/*` endpoints are not used by the app** yet.
 - **The `observed_mode` and `last_seen_at` fields** the API exposes for pump
   modes are not read by the frontend.
-- **The water-level sensors on the ESP32 are wired up but never read**, and the
-  `humidity` value actually comes from the DHT11.

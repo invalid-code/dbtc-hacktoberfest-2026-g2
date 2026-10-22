@@ -237,21 +237,30 @@ cd api
 uv run alembic upgrade head
 ```
 
-The chain is linear, head is `b2c3d4e5f6a7`:
+### In CI
 
-|    Revision    |                                               Change                                               |
-|----------------|----------------------------------------------------------------------------------------------------|
-| `9bafc0551a33` | Base — `sensor_data` with `moisture_level` and `water_level`                                       |
-| `8b2d48567ac2` | Drops the `users` and `refresh_tokens` tables (removes auth)                                       |
-| `226664d29595` | Adds `sensor_data.sensor`                                                                          |
-| `ea1d4c867711` | No-op placeholder                                                                                  |
-| `c9318941d64b` | Creates `pump` and `sensor`; adds the `pump_mode.pump_id` and `sensor_data.sensor_id` foreign keys |
-| `83b1f306fe92` | Creates `pump_history`                                                                             |
-| `a1f2c3d4e5f6` | Adds `sensor_data.recorded_at`                                                                     |
-| `b7c9d1e3f5a2` | Adds `sensor_data.temperature`                                                                     |
-| `d3e4f5a6b7c8` | Makes `temperature` required, adds `humidity`, drops `water_level`                                 |
-| `e5f6a7b8c9d0` | Adds `pump_mode.observed_mode` and `last_seen_at`                                                  |
-| `b2c3d4e5f6a7` | Adds `sensor_data.garbled` (head)                                                                  |
+`.github/workflows/migrate-prod-db.yml` applies the same command to the
+production database on every push to `main`. The workflow first runs the test
+suite, then runs `alembic upgrade head` with `DB_CONN_STR` taken from the
+`PROD_DB_CONN_STR` repository secret. The secret must hold the prod URL in
+the asyncpg form, e.g.
+`postgresql+asyncpg://user:password@host/database`; `alembic/env.py` swaps
+the driver for `psycopg2` on its own. A push to `main` therefore never reaches
+the prod database with failing tests, and the workflow can also be started by
+hand from the Actions tab.
+
+The chain is a single revision, head is `843fed31fe6a`:
+
+|    Revision    |                                     Change                                     |
+|----------------|--------------------------------------------------------------------------------|
+| `843fed31fe6a` | Creates `pump`, `sensor`, `pump_history`, `pump_mode` and `sensor_data` (head) |
+
+The eleven revisions that came before it were squashed into this one initial
+migration, so the old revision ids no longer exist. A database that was
+already migrated with the old chain cannot be upgraded any more: Alembic
+cannot find the revision it is stamped with. Recreate such a database, or
+stamp it with `uv run alembic stamp 843fed31fe6a` once its schema is known to
+match the models.
 
 ## Pump-mode polling
 
@@ -339,8 +348,9 @@ The suite covers 45 tests:
 ## Things to know
 
 - **No authentication.** Every endpoint and the WebSocket are open. A JWT
-  system existed and was removed in migration `8b2d48567ac2`; nothing
-  replaced it. Add auth before exposing this publicly.
+  system existed and was removed; the schema has no `users` or
+  `refresh_tokens` tables at all. Nothing replaced it. Add auth before
+  exposing this publicly.
 - **CORS is the only middleware.** No rate limiting, no request logging, no
   gzip, no HTTPS redirect.
 - **`engine.echo=True`** in `app/database.py` logs every SQL statement. The

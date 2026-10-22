@@ -22,15 +22,14 @@ An ESP32 DevKit with three sensors per zone:
 |         Peripheral         |    Pins    |               Notes               |
 |----------------------------|------------|-----------------------------------|
 | DHT11 temperature/humidity | 4, 16, 17  | One per zone                      |
-| Capacitive soil moisture   | 36, 35, 25 | ADC, raw 0–2800 mapped to 0–100 % |
+| Capacitive soil moisture   | 36, 39, 34 | ADC, raw 0–2800 mapped to 0–100 % |
 | Water pump                 | 25, 26, 27 | Digital output                    |
 
 Zone 1 is sensor 1 / pump 1, zone 2 is sensor 2 / pump 2, and so on.
 
-One pin is used twice: pin 25 is both pump 1's output and moisture sensor 3's
-input. That only works if the pump output and the analog input are on
-separate circuits, but it is worth checking the wiring before trusting zone
-3's readings.
+No pin is used twice: the pumps sit on the digital outputs 25, 26 and 27, the
+moisture sensors on the analog inputs 36, 39 and 34, and the DHT11s on 4, 16
+and 17.
 
 ## secrets
 
@@ -216,7 +215,6 @@ raises a spooky alert instead of the threshold alerts, and the app shows a
 - **`humidity` is sent as a float** but the API schema declares it as an `int`.
   Pydantic coerces it only when it has no fractional part, so a fractional
   humidity would fail validation and drop the WebSocket connection.
-- **Pin 25 is double-booked**, as described in the hardware section.
 - **The `openPump()` branches are redundant**, as described in the watering
   section.
 - **`secrets.h` and `api/.env` hold live credentials.** Both are git-ignored.
