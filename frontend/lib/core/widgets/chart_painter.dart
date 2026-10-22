@@ -63,7 +63,7 @@ class ChartPainter extends CustomPainter {
       ..color = const Color(0xffe0e0e0)
       ..strokeWidth = 1;
     for (final index in _labelIndices(chart)) {
-      final x = _xOf(chart, index);
+      final x = _xOf(chart, buckets[index]);
       canvas.drawLine(Offset(x, chart.top), Offset(x, chart.bottom), vertical);
     }
   }
@@ -76,7 +76,10 @@ class ChartPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
     final path = Path();
     for (var i = 0; i < buckets.length; i++) {
-      final point = Offset(_xOf(chart, i), _yOf(chart, buckets[i].value));
+      final point = Offset(
+        _xOf(chart, buckets[i]),
+        _yOf(chart, buckets[i].value),
+      );
       if (i == 0) {
         path.moveTo(point.dx, point.dy);
       } else {
@@ -90,8 +93,9 @@ class ChartPainter extends CustomPainter {
   void _paintAxis(Canvas canvas, Rect chart, Size size) {
     final text = TextPainter(textDirection: TextDirection.ltr);
     for (final index in _labelIndices(chart)) {
+      final bucket = buckets[index];
       text.text = TextSpan(
-        text: buckets[index].label,
+        text: bucket.label,
         style: const TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
@@ -102,7 +106,11 @@ class ChartPainter extends CustomPainter {
       text.paint(
         canvas,
         Offset(
-          _clamp(_xOf(chart, index) - text.width / 2, 0, size.width - text.width),
+          _clamp(
+            _xOf(chart, bucket) - text.width / 2,
+            0,
+            size.width - text.width,
+          ),
           chart.bottom + 12,
         ),
       );
@@ -112,10 +120,8 @@ class ChartPainter extends CustomPainter {
   /// The value of the points written above them.
   void _paintValues(Canvas canvas, Rect chart, Size size) {
     final text = TextPainter(textDirection: TextDirection.ltr);
-    // Only a few points are labelled, they would overlap otherwise.
-    final step = (buckets.length / 12).ceil();
-    for (var i = 0; i < buckets.length; i += step) {
-      final bucket = buckets[i];
+    for (final index in _labelIndices(chart)) {
+      final bucket = buckets[index];
       text.text = TextSpan(
         text: '${formatNumber(bucket.value)}$valueSuffix',
         style: const TextStyle(
@@ -128,7 +134,11 @@ class ChartPainter extends CustomPainter {
       text.paint(
         canvas,
         Offset(
-          _clamp(_xOf(chart, i) - text.width / 2, 0, size.width - text.width),
+          _clamp(
+            _xOf(chart, bucket) - text.width / 2,
+            0,
+            size.width - text.width,
+          ),
           _yOf(chart, bucket.value) - text.height - 6,
         ),
       );
@@ -150,19 +160,24 @@ class ChartPainter extends CustomPainter {
     );
   }
 
-  /// The buckets whose label is drawn, spread over the width of the chart.
+  /// The buckets whose label is drawn, far enough apart to stay readable.
   List<int> _labelIndices(Rect chart) {
-    final count = buckets.length;
-    final maxLabels = (chart.width / 60).floor().clamp(2, count);
-    return [
-      for (var i = 0; i < maxLabels; i++)
-        ((count - 1) * i / (maxLabels - 1)).round(),
-    ];
+    // The labels of the points would pile up where the data is dense.
+    const spacing = 50.0;
+    final indices = <int>[];
+    var last = chart.left - spacing;
+    for (var i = 0; i < buckets.length; i++) {
+      final x = _xOf(chart, buckets[i]);
+      if (x - last < spacing) continue;
+      indices.add(i);
+      last = x;
+    }
+    return indices;
   }
 
-  /// The x of a bucket on the chart.
-  double _xOf(Rect chart, int index) =>
-      chart.left + chart.width * index / (buckets.length - 1);
+  /// The x of a bucket on the chart, it follows the time of the bucket.
+  double _xOf(Rect chart, ChartBucket bucket) =>
+      chart.left + chart.width * bucket.fraction;
 
   /// The y of a value on the chart.
   double _yOf(Rect chart, double value) =>

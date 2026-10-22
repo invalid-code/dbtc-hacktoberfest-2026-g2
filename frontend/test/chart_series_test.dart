@@ -125,6 +125,58 @@ void main() {
       expect(buckets.first.label, 'OCT 19');
     });
 
+    test('the points of a range are spaced by their time', () {
+      final now = DateTime(2026, 10, 22, 15, 30);
+      final buckets = ChartSeries.group(
+        points: [
+          // Two days of the last 30, ten days apart.
+          ChartPoint(at: DateTime(2026, 10, 20, 9), value: 1),
+          ChartPoint(at: DateTime(2026, 10, 10, 9), value: 2),
+        ],
+        range: TimeRange.day,
+        now: now,
+      );
+
+      expect(buckets.length, 2);
+      // 2 days and 12 days of the 29 the window is wide, the ten days
+      // between them are a gap on the axis.
+      expect(buckets[0].fraction, closeTo(17 / 29, 0.001));
+      expect(buckets[1].fraction, closeTo(27 / 29, 0.001));
+    });
+
+    test('the real time points are spaced by their time', () {
+      final buckets = ChartSeries.group(
+        points: [
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 10), value: 2),
+          // Three minutes after the first of the nine the span covers.
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 13), value: 3),
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 19), value: 5),
+        ],
+        range: TimeRange.realTime,
+        now: DateTime(2026, 10, 22, 15, 30),
+      );
+
+      expect(buckets.length, 3);
+      expect(buckets[0].fraction, 0);
+      expect(buckets[1].fraction, closeTo(1 / 3, 0.001));
+      expect(buckets[2].fraction, 1);
+    });
+
+    test('the real time points of the same moment are spread evenly', () {
+      final at = DateTime(2026, 10, 22, 15, 30);
+      final buckets = ChartSeries.group(
+        points: [
+          ChartPoint(at: at, value: 2),
+          ChartPoint(at: at, value: 3),
+        ],
+        range: TimeRange.realTime,
+        now: at,
+      );
+
+      expect(buckets[0].fraction, 0);
+      expect(buckets[1].fraction, 1);
+    });
+
     test('the real time range keeps the latest points of their own', () {
       final buckets = ChartSeries.group(
         points: [

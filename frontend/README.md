@@ -286,13 +286,18 @@ ever recorded and the filtering happens in the browser:
    (`BucketMode.average`). The real time range skips the grouping, every
    point is a bucket of its own.
 2. The buckets that hold no point are left out, so the graph only shows the
-   units with data.
+   units with data. Every bucket keeps its place in the window (its
+   `fraction`, 0 at the left edge and 1 at the right one), so the distance
+   between two points is the time between them and a unit without data leaves
+   a gap on the axis.
 3. The view models keep the range and rebuild the buckets when it changes.
    `HomeViewModel` has `usageRange`, `SensorReadingsViewModel` has
    `temperatureRange` and `moistureRange`.
 
-The painters draw the labels of the buckets on the x axis and spread them over
-the width of the chart, so a chart of 60 buckets stays readable.
+The painters draw the labels of the buckets on the x axis where their time
+puts them and drop a label when it would sit closer than 50 pixels to the last
+one, so a chart of 60 buckets stays readable. The points of the real time
+range are spread over the time they cover.
 
 ## Design system
 

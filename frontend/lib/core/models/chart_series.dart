@@ -16,6 +16,7 @@ class ChartBucket {
     required this.start,
     required this.value,
     required this.label,
+    required this.fraction,
   });
 
   /// The moment the unit of the bucket starts.
@@ -26,6 +27,13 @@ class ChartBucket {
 
   /// The label of the unit on the x axis.
   final String label;
+
+  /// How far along the x axis the bucket sits, 0 at the left edge and 1 at
+  /// the right edge.
+  ///
+  /// It follows the time of the bucket, so the distance between two points is
+  /// the time between them and a unit without data leaves a gap.
+  final double fraction;
 }
 
 /// How the values of the points of a bucket are combined.
@@ -81,6 +89,7 @@ class ChartSeries {
               ? totals[slot] / counts[slot]
               : totals[slot],
           label: _labelOf(range, start),
+          fraction: _fractionOf(start, end, range),
         ),
       );
     }
@@ -95,14 +104,33 @@ class ChartSeries {
     final start = sorted.length > range.slots
         ? sorted.length - range.slots
         : 0;
+    final latest = sorted.sublist(start);
+    if (latest.isEmpty) return const [];
+    final first = latest.first.at;
+    final span = latest.last.at.difference(first).inMilliseconds;
     return [
-      for (final point in sorted.sublist(start))
+      for (var i = 0; i < latest.length; i++)
         ChartBucket(
-          start: point.at,
-          value: point.value,
-          label: _timeLabel(point.at),
+          start: latest[i].at,
+          value: latest[i].value,
+          label: _timeLabel(latest[i].at),
+          // The points are spread over the time they cover, the time between
+          // two readings is the distance between them.
+          fraction: span > 0
+              ? latest[i].at.difference(first).inMilliseconds / span
+              : latest.length > 1
+              ? i / (latest.length - 1)
+              : 1,
         ),
     ];
+  }
+
+  /// How far along the x axis a unit of the range sits, 0 at the left edge
+  /// and 1 at the right edge.
+  static double _fractionOf(DateTime start, DateTime end, TimeRange range) {
+    final span = range.slots - 1;
+    if (span <= 0) return 1;
+    return (span - _indexOf(start, end, range)) / span;
   }
 
   /// How many units of the range separate the moment from the end of the
