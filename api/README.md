@@ -64,6 +64,13 @@ which is git-ignored):
 `FRONTEND_URL=*` sets `allow_credentials=False` (Starlette forbids credentials
 with a wildcard origin). Any other value sets it to `True`.
 
+`DB_CONN_STR` always names the `asyncpg` driver, because the app engine is
+async and `psycopg2` is blocking-only. A host that requires TLS (Neon, for
+example) asks for it with `?ssl=require`. Alembic runs synchronously, so
+`alembic/env.py` swaps the driver for `psycopg2` and renames `ssl` to the
+libpq spelling `sslmode`. `channel_binding=require` is a libpq feature that
+`asyncpg` does not support, so it cannot be used on the app's connection.
+
 ## Layering
 
 The code follows one direction:

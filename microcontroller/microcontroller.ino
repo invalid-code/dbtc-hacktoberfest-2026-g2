@@ -45,24 +45,16 @@ const int PUMP1_PIN = 25;
 const int PUMP2_PIN = 26;
 const int PUMP3_PIN = 27;
 
-// Sensor input pins: zone 1 -> moisture 36 / water level 39,
-// zone 2 -> moisture 35 / water level 32, zone 3 -> moisture 25 / water level 26.
-// Note that pins 25 and 26 are used both as a pump output and as an analog input
-// for zone 3.
+// Sensor input pins: zone 1 -> 36, zone 2 -> 39, zone 3 -> 34.
+// Note that pin 25 is used both as a pump output and as an analog input for
+// zone 3.
 const int MOISTURE_PIN_1 = 36;
-const int WATER_LEVEL_PIN_1 = 39;
-const int MOISTURE_PIN_2 = 35;
-const int WATER_LEVEL_PIN_2 = 32;
-const int MOISTURE_PIN_3 = 25;
-const int WATER_LEVEL_PIN_3 = 26;
+const int MOISTURE_PIN_2 = 39;
+const int MOISTURE_PIN_3 = 34;
 
 // Raw ADC range of the capacitive soil moisture sensors (0-2800), mapped to 0-100 %.
 const int MOISTURE_LOW_VAL = 0;
 const int MOISTURE_HIGH_VAL = 2800;
-// Raw ADC range of the water level sensors (0-1400). These sensors are declared
-// and pin-moded but never read.
-const int WATER_LEVEL_LOW_VAL = 0;
-const int WATER_LEVEL_HIGH_VAL = 1400;
 
 // How long each mode runs the pump, in milliseconds.
 const int FAST_RUN_MS = 750;
@@ -500,11 +492,8 @@ void setup() {
   pinMode(PUMP3_PIN, OUTPUT);
 
   pinMode(MOISTURE_PIN_1, INPUT);
-  pinMode(WATER_LEVEL_PIN_1, INPUT);
   pinMode(MOISTURE_PIN_2, INPUT);
-  pinMode(WATER_LEVEL_PIN_2, INPUT);
   pinMode(MOISTURE_PIN_3, INPUT);
-  pinMode(WATER_LEVEL_PIN_3, INPUT);
 
   Serial.println("ESP32 Watering System Initialized");
 }

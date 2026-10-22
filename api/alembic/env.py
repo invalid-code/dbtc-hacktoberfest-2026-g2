@@ -1,5 +1,7 @@
 from logging.config import fileConfig
 
+import re
+
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
@@ -61,9 +63,10 @@ def run_migrations_online() -> None:
     """
     url = settings.DB_CONN_STR
     # alembic runs synchronously, so the asyncpg driver of the app is swapped
-    # for the blocking psycopg2 one
+    # for the blocking psycopg2 one, whose ssl parameter libpq calls sslmode
     if "postgresql+asyncpg" in url:
         url = url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+        url = re.sub(r"([?&])ssl=", r"\1sslmode=", url)
 
     configuration = config.get_section(config.config_ini_section)
     configuration["sqlalchemy.url"] = url
