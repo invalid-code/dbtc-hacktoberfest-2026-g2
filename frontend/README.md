@@ -12,6 +12,7 @@ pump-mode changes back to the API.
 - [State management](#state-management)
 - [Data layer](#data-layer)
 - [Screens](#screens)
+- [Time range filter](#time-range-filter)
 - [Design system](#design-system)
 - [Tests](#tests)
 - [Things to know](#things-to-know)
@@ -67,6 +68,7 @@ lib/
 ├── router/              go_router setup + route path constants
 ├── model/               models shared between features (alert, pump)
 ├── core/
+│   ├── models/          time_range.dart, chart_series.dart
 │   ├── network/         api_client.dart (REST), sensor_ws.dart (WebSocket)
 │   └── widgets/         panels, sidebar, charts, formatters
 └── features/
@@ -102,11 +104,14 @@ GreenhouseApp(
 | `lib/model/pump_info.dart`                                                     | `PumpInfo`, the mode labels and `pumpModeLabel()`        |
 | `lib/core/network/api_client.dart`                                             | `GreenhouseApi`, the HTTP client, `GreenhouseSnapshot`   |
 | `lib/core/network/sensor_ws.dart`                                              | `SensorFeed`, the live WebSocket feed                    |
+| `lib/core/models/time_range.dart`                                              | `TimeRange`, the time units a graph is filtered by       |
+| `lib/core/models/chart_series.dart`                                            | `ChartPoint`, `ChartBucket`, `ChartSeries.group`         |
 | `lib/core/widgets/panel.dart`                                                  | `Panel`, the shared card, `panelContentHeight`           |
 | `lib/core/widgets/conditions_card.dart`                                        | `ConditionsCard`, the metrics grid and the spooky banner |
 | `lib/core/widgets/side_bar.dart`                                               | `SideBar`, the only navigation control                   |
-| `lib/core/widgets/chart_painter.dart`                                          | `ChartPainter`, the monthly usage chart                  |
+| `lib/core/widgets/chart_painter.dart`                                          | `ChartPainter`, the line chart                           |
 | `lib/core/widgets/sort_menu.dart`                                              | `SortMenu`, the newest/oldest toggle                     |
+| `lib/core/widgets/time_range_filter.dart`                                      | `TimeRangeFilter`, the time range chip                   |
 | `lib/core/widgets/empty_history.dart`                                          | `EmptyHistory`, the empty state                          |
 | `lib/core/widgets/formatting.dart`                                             | Litres, times and dates                                  |
 | `lib/features/home/presentation/home_view.dart`                                | The dashboard screen                                     |
@@ -169,7 +174,7 @@ The rules the codebase follows:
 - **A screen owns its view model.** It creates it in `initState`, calls
   `start()`, and disposes it in `dispose()`.
 - **`null` means loading, a separate `bool` means failed.** `HomeViewModel`
-  has `snapshot`, `todayUsageLiters`, `alerts`, `monthlyUsage`, `history` and
+  has `snapshot`, `todayUsageLiters`, `alerts`, `usageBuckets`, `history` and
   four matching `...Failed` flags. The widgets pick the right empty or error
   state from those two pieces of information.
 - **Errors are caught, never rethrown.** Every API call is wrapped in a
@@ -212,7 +217,8 @@ message that is not a sensor reading.
 
 - **Current Conditions** — today's water usage, soil moisture, humidity and
   temperature, in a grid that goes 4 → 2 → 1 columns as the width shrinks.
-- **Water Usage History** — a hand-drawn line chart of the last 12 months.
+- **Water Usage History** — a hand-drawn line chart of the water used, with a
+  time range filter in the panel header.
 - **History Summary** — today's and yesterday's waterings, side by side with
   the chart on wide screens.
 - **Sensor Status** — a card per pump with a mode dropdown and a start/stop
@@ -236,12 +242,44 @@ the panel header. Each row shows the pump, the date and time, and the litres.
 ### Sensor Readings (`/sensor-reading`)
 
 The current conditions at the top, then two trend panels — temperature and
-moisture — drawn with `ChartPainter` and `LineChartPainter`. The charts
-normalise their values before painting: moisture is divided by 100 and
-temperature by 50, both clamped to 0–1.
+moisture — drawn with `ChartPainter` and `LineChartPainter`. Each panel has
+its own time range filter. The charts scale their values before painting:
+moisture is scaled to 100 and temperature to 50, both clamped to the height of
+the chart.
 
 This screen's `ConditionsCard` shows only the sensor, so today's water usage
 renders as `—`.
+
+## Time range filter
+
+Every graph can be filtered by a time unit. The filter is a chip in the panel
+header (`TimeRangeFilter`), the same style as the sort toggle of the history
+screen.
+
+| Unit     | Buckets          | Window             | Label of a bucket |
+|----------|------------------|--------------------|-------------------|
+| `minute` | 60               | The last hour      | `15:28`           |
+| `hour`   | 24               | The last day       | `15:00`           |
+| `day`    | 30               | The last 30 days   | `OCT 20`          |
+| `week`   | 12               | The last 12 weeks  | `OCT 19`          |
+| `month`  | 12               | The last 12 months | `OCT`             |
+| `year`   | 5                | The last 5 years   | `2026`            |
+
+The filter does not ask the API for a range — the API returns every reading
+ever recorded and the filtering happens in the browser:
+
+1. `ChartSeries.group` drops the points outside of the window and groups the
+   rest into one bucket per unit. The water usage of a bucket is added up
+   (`BucketMode.sum`), the sensor readings of a bucket are averaged
+   (`BucketMode.average`).
+2. The buckets that hold no point are left out, so the graph only shows the
+   units with data.
+3. The view models keep the range and rebuild the buckets when it changes.
+   `HomeViewModel` has `usageRange`, `SensorReadingsViewModel` has
+   `temperatureRange` and `moistureRange`.
+
+The painters draw the labels of the buckets on the x axis and spread them over
+the width of the chart, so a chart of 60 buckets stays readable.
 
 ## Design system
 
@@ -274,15 +312,16 @@ cd frontend
 flutter test
 ```
 
-The suite covers 38 tests:
+The suite covers 51 tests:
 
-| File                         | Tests |                                        What it covers                                        |
-|------------------------------|-------|----------------------------------------------------------------------------------------------|
-| `test/api_client_test.dart`  |   4   | JSON parsing, the garbled flag, the requested paths, that failures throw                     |
-| `test/models_test.dart`      |  10   | Every model's `fromJson`, including the fallbacks for missing and broken values              |
-| `test/sensor_feed_test.dart` |   6   | Parsing socket messages, ignoring non-readings, the feed stops after `dispose()`             |
-| `test/view_models_test.dart` |  11   | Loading state, per-endpoint failure flags, live updates, mode updates, monthly normalisation |
-| `test/widget_test.dart`      |   7   | The three screens, navigation, the empty and error states, the spooky banner                 |
+| File                          | Tests |                                        What it covers                                        |
+|-------------------------------|-------|----------------------------------------------------------------------------------------------|
+| `test/api_client_test.dart`   |   4   | JSON parsing, the garbled flag, the requested paths, that failures throw                     |
+| `test/chart_series_test.dart` |   8   | Grouping the points into the buckets of a range, the labels of the axis, the dropped points  |
+| `test/models_test.dart`       |  10   | Every model's `fromJson`, including the fallbacks for missing and broken values              |
+| `test/sensor_feed_test.dart`  |   6   | Parsing socket messages, ignoring non-readings, the feed stops after `dispose()`             |
+| `test/view_models_test.dart`  |  15   | Loading state, per-endpoint failure flags, live updates, mode updates, the time ranges      |
+| `test/widget_test.dart`       |   8   | The three screens, navigation, the empty and error states, the spooky banner, the filter    |
 
 `test/support/fakes.dart` holds the shared harness:
 
@@ -311,4 +350,5 @@ network or socket is touched.
 - **`GreenhouseSnapshot` sits in the network layer** even though the view
   models and `ConditionsCard` consume it.
 - **`cupertino_icons` is declared but never imported.**
-- **The `/gemini/*` endpoints are not used**, so the app has no AI screen.
+- **The pump activation parameters are not shown.** The API writes them and
+  exposes them at `GET /pump/parameters/`, the app has no screen for them.

@@ -1,11 +1,15 @@
 """The live channel: the device publishes readings here and the API rebroadcasts them."""
 
+import logging
+
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import SensorDataRequest
 from app.services import sensor_service, websocket_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -25,6 +29,6 @@ async def mc_ws(
             sensor_data = await sensor_service.save_sensor_data(body, db)
             await websocket_service.broadcast_sensor_data(sensor_data)
     except WebSocketDisconnect:
-        pass
+        logger.info("the microcontroller closed the connection")
     finally:
         await websocket_service.disconnect(websocket)

@@ -7,8 +7,8 @@ from app.config import settings
 
 DATABASE_URL = settings.DB_CONN_STR
 
-# echo=True logs every SQL statement the engine runs
-engine = create_async_engine(DATABASE_URL, echo=True)
+# the engine logs every statement it runs, but only when the log level is DEBUG
+engine = create_async_engine(DATABASE_URL, echo=settings.LOG_LEVEL == "DEBUG")
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine, class_=AsyncSession, expire_on_commit=False

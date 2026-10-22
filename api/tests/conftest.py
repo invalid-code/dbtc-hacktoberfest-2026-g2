@@ -9,6 +9,8 @@ TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / "dbtc_api_test.db"
 os.environ["DB_CONN_STR"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
 os.environ["FRONTEND_URL"] = "*"
 os.environ["DEVICE_URL"] = ""
+# the weather service reaches out to the internet, the tests do not
+os.environ["WEATHER_ENABLED"] = "false"
 
 import pytest
 import pytest_asyncio

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:frontend/core/models/chart_series.dart';
+import 'package:frontend/core/models/time_range.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/network/sensor_ws.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
@@ -26,12 +28,22 @@ class HomeViewModel extends ChangeNotifier {
   GreenhouseSnapshot? snapshot;
   double? todayUsageLiters;
   List<Alert>? alerts;
-  List<double>? monthlyUsage;
+  List<ChartBucket>? usageBuckets;
   List<PumpHistoryEntry>? history;
   bool snapshotFailed = false;
   bool usageFailed = false;
   bool alertsFailed = false;
   bool historyFailed = false;
+
+  /// The time unit the usage chart is filtered by.
+  TimeRange usageRange = TimeRange.month;
+
+  /// The biggest amount of water of a bucket, the chart is scaled to it.
+  double get usageMaxLiters {
+    final buckets = usageBuckets ?? const <ChartBucket>[];
+    if (buckets.isEmpty) return 1;
+    return buckets.map((bucket) => bucket.value).reduce((a, b) => a > b ? a : b);
+  }
 
   int pumpIdFor(int index) =>
       snapshot != null && snapshot!.pumps.length > index
@@ -115,10 +127,18 @@ class HomeViewModel extends ChangeNotifier {
     try {
       final entries = await _api.loadPumpHistory();
       history = entries;
-      monthlyUsage = entries.isEmpty ? const [] : monthlyUsageFrom(entries);
+      usageBuckets = usageBucketsFrom(entries, usageRange);
     } catch (_) {
       historyFailed = true;
     }
+    _notify();
+  }
+
+  /// Filters the usage chart by another time unit.
+  void setUsageRange(TimeRange range) {
+    if (range == usageRange) return;
+    usageRange = range;
+    usageBuckets = usageBucketsFrom(history ?? const [], range);
     _notify();
   }
 
@@ -157,19 +177,21 @@ class HomeViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// One bucket per month of the current year, normalised so that the biggest
-  /// month is 1.0.
-  static List<double> monthlyUsageFrom(List<PumpHistoryEntry> entries) {
-    final year = DateTime.now().year;
-    final totals = List<double>.filled(12, 0);
-    for (final entry in entries) {
-      final at = entry.recordedAt;
-      if (at == null || at.year != year) continue;
-      totals[at.month - 1] += entry.liters;
-    }
-    final max = totals.reduce((a, b) => a > b ? a : b);
-    if (max <= 0) return totals;
-    return totals.map((value) => value / max).toList();
+  /// The water usage of every unit of the range, the litres of a unit added
+  /// up.
+  static List<ChartBucket> usageBucketsFrom(
+    List<PumpHistoryEntry> entries,
+    TimeRange range,
+  ) {
+    return ChartSeries.group(
+      points: [
+        for (final entry in entries)
+          if (entry.recordedAt != null)
+            ChartPoint(at: entry.recordedAt!, value: entry.liters),
+      ],
+      range: range,
+      mode: BucketMode.sum,
+    );
   }
 
   @override

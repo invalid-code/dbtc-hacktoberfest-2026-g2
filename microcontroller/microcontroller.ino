@@ -8,12 +8,19 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <esp_system.h>
 #include <math.h>
 #include <time.h>
 #include "DHT.h"
 
 #include "secrets.h"
+
+// The path of the activation parameters on the API. secrets.h may set another
+// one, but it is git-ignored, so the sketch needs a default of its own.
+#ifndef PUMP_PARAMETERS_PATH
+#define PUMP_PARAMETERS_PATH "/pump/parameters/"
+#endif
 
 // One DHT11 temperature/humidity sensor per zone.
 #define DHTPIN1 4
@@ -76,6 +83,34 @@ const float MAX_GARBLED_CHANCE = 0.8f;
 int curMode1 = FAST;
 int curMode2 = FAST;
 int curMode3 = FAST;
+
+// ---- The activation parameters the API decides -------------------------------
+
+// The soil moisture a pump waters at until the API says otherwise.
+const int DEFAULT_MOISTURE_THRESHOLD = 30;
+
+// How often the activation parameters are read from the API, in milliseconds.
+const unsigned long PARAMETERS_REFRESH_MS = 60000;
+
+// What the API decided for one pump.
+struct ActivationParameters {
+  bool active = true;
+  int moistureThreshold = DEFAULT_MOISTURE_THRESHOLD;
+  unsigned long intervalMs = 0;
+  // false until the API has answered at least once.
+  bool known = false;
+};
+
+// The parameters of the pumps, indexed by the pump id.
+ActivationParameters activationParameters[4];
+
+// When each pump last ran, and whether it ever did.
+unsigned long lastActivationMs[4] = {0, 0, 0, 0};
+bool hasActivated[4] = {false, false, false, false};
+
+// Guards the parameters: they are written by the parameters task and read by
+// the sensor loop.
+SemaphoreHandle_t parametersMutex = nullptr;
 
 struct UsageReport {
   int pumpId;
@@ -186,6 +221,106 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
+// ---- The activation parameters ------------------------------------------------
+
+// Reads the activation parameters of every pump from the API. The last ones
+// are kept when the API cannot be reached, so the greenhouse keeps watering
+// itself the way it did before.
+void fetchActivationParameters() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Skipping the pump parameters, wifi is down");
+    return;
+  }
+
+  HTTPClient http;
+  String url = String(API_SERVER_URL) + String(PUMP_PARAMETERS_PATH);
+  if (!http.begin(url)) {
+    Serial.println("Could not start the pump parameters request");
+    return;
+  }
+
+  int status = http.GET();
+  String body = "";
+  if (status == 200) {
+    body = http.getString();
+  } else {
+    Serial.printf("Pump parameters request failed (%d): %s\n", status,
+                  http.getString().c_str());
+  }
+  http.end();
+
+  if (body.length() == 0) {
+    return;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) {
+    Serial.println("The pump parameters did not parse");
+    return;
+  }
+
+  JsonArray pumps = doc.as<JsonArray>();
+  if (pumps.isNull()) {
+    Serial.println("The pump parameters did not hold a list of pumps");
+    return;
+  }
+
+  for (size_t i = 0; i < pumps.size(); i++) {
+    JsonObject entry = pumps[i].as<JsonObject>();
+    int pumpId = entry["pump_id"] | 0;
+    if (pumpId < 1 || pumpId > 3) {
+      continue;
+    }
+
+    int intervalMinutes = entry["activation_interval_minutes"] | 0;
+    ActivationParameters parameters;
+    // a json boolean has to be read with a boolean default, an integer default
+    // would always fall through to the default
+    parameters.active = entry["active"] | true;
+    parameters.moistureThreshold =
+        entry["moisture_threshold"] | DEFAULT_MOISTURE_THRESHOLD;
+    parameters.intervalMs =
+        intervalMinutes > 0 ? (unsigned long)intervalMinutes * 60000UL : 0UL;
+    parameters.known = true;
+
+    if (parametersMutex != nullptr) {
+      xSemaphoreTake(parametersMutex, portMAX_DELAY);
+    }
+    activationParameters[pumpId] = parameters;
+    if (parametersMutex != nullptr) {
+      xSemaphoreGive(parametersMutex);
+    }
+
+    Serial.printf("Pump %d is %s, it waters at %d %% soil moisture, every %d minutes\n",
+                  pumpId, parameters.active ? "active" : "switched off",
+                  parameters.moistureThreshold, intervalMinutes);
+  }
+}
+
+// The parameters of a pump, as the API last left them.
+ActivationParameters readParameters(int pumpId) {
+  ActivationParameters parameters;
+  if (parametersMutex != nullptr) {
+    xSemaphoreTake(parametersMutex, portMAX_DELAY);
+  }
+  if (pumpId >= 1 && pumpId <= 3) {
+    parameters = activationParameters[pumpId];
+  }
+  if (parametersMutex != nullptr) {
+    xSemaphoreGive(parametersMutex);
+  }
+  return parameters;
+}
+
+// The task that keeps the activation parameters fresh.
+void parametersTask(void* arg) {
+  (void)arg;
+  for (;;) {
+    fetchActivationParameters();
+    vTaskDelay(PARAMETERS_REFRESH_MS / portTICK_PERIOD_MS);
+  }
+}
+
 // ---- The device HTTP server (/mode handlers) ---------------------------------
 
 // The API polls this to learn which mode each pump is running.
@@ -236,6 +371,25 @@ void handlePostMode() {
 
   String json = "{\"pump\":" + String(pumpId) + ",\"mode\":\"" +
                 String(modeName(mode)) + "\"}";
+  deviceServer.send(200, "application/json", json);
+}
+
+// Shows the activation parameters the device is working with.
+void handleGetParameters() {
+  String json = "{\"parameters\":{";
+  for (int pumpId = 1; pumpId <= 3; pumpId++) {
+    ActivationParameters parameters = readParameters(pumpId);
+    json += "\"" + String(pumpId) + "\":{";
+    json += "\"active\":" + String(parameters.active ? "true" : "false");
+    json += ",\"moisture_threshold\":" + String(parameters.moistureThreshold);
+    json += ",\"activation_interval_minutes\":" +
+            String(parameters.intervalMs / 60000UL);
+    json += ",\"known\":" + String(parameters.known ? "true" : "false");
+    json += "},";
+  }
+  // the last entry left a comma behind
+  json = json.substring(0, json.length() - 1);
+  json += "}}";
   deviceServer.send(200, "application/json", json);
 }
 
@@ -432,20 +586,36 @@ void activatePumpMode(int pumpId, int pumpPin, int curMode) {
   reportWaterUsage(pumpId, modeLitres(curMode));
 }
 
-// Runs the pump when the soil moisture is at or below 30. Note that both branches
-// do the same thing, so the temperature and humidity conditions have no effect.
-void openPump(int pumpId, int moisturePercent, float tempValue, float humidityValue, int curMode) {
-  if (moisturePercent <= 30 && tempValue > 30.0 && humidityValue > 70.0) {
-    activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
-  } else if (moisturePercent <= 30) {
-    activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
+// Runs the pump when the soil moisture is at or below the threshold the API
+// decided, when the API let the pump water at all, and when enough time has
+// passed since the last activation. Before the API has answered the pump
+// waters at 30 % without a wait, the way it always did.
+void openPump(int pumpId, int moisturePercent, int curMode) {
+  ActivationParameters parameters = readParameters(pumpId);
+
+  if (!parameters.active) {
+    Serial.printf("Pump %d does not water, the API switched it off\n", pumpId);
+    return;
   }
+
+  if (moisturePercent > parameters.moistureThreshold) {
+    return;
+  }
+
+  if (hasActivated[pumpId] && parameters.intervalMs > 0 &&
+      millis() - lastActivationMs[pumpId] < parameters.intervalMs) {
+    return;
+  }
+
+  hasActivated[pumpId] = true;
+  lastActivationMs[pumpId] = millis();
+  activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
 }
 
 // ---- Setup and the main loop ------------------------------------------------
 
-// Connects to Wi-Fi, opens the socket, starts the HTTP server and the usage
-// task, and initialises the sensors.
+// Connects to Wi-Fi, opens the socket, starts the HTTP server, the usage task
+// and the parameters task, and initialises the sensors.
 void setup() {
   Serial.begin(115200);
 
@@ -474,8 +644,16 @@ void setup() {
     Serial.println("Could not create the pump water usage queue");
   }
 
+  parametersMutex = xSemaphoreCreateMutex();
+  if (parametersMutex != nullptr) {
+    xTaskCreate(parametersTask, "parameters", 4096, nullptr, 1, nullptr);
+  } else {
+    Serial.println("Could not create the pump parameters lock");
+  }
+
   deviceServer.on("/mode", HTTP_GET, handleGetMode);
   deviceServer.on("/mode", HTTP_POST, handlePostMode);
+  deviceServer.on("/parameters", HTTP_GET, handleGetParameters);
   deviceServer.begin();
   Serial.println("Pump mode server listening");
 
@@ -535,7 +713,7 @@ void loop() {
     Serial.println(humiditySensor1Value);
 
     publishSensorReading(1, moisture1Percent, tempSensor1Value, humiditySensor1Value);
-    openPump(1, moisture1Percent, tempSensor1Value, humiditySensor1Value, curMode1);
+    openPump(1, moisture1Percent, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
     int moisture2Percent = map(moisture2Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
@@ -554,7 +732,7 @@ void loop() {
     Serial.println(humiditySensor2Value);
 
     publishSensorReading(2, moisture2Percent, tempSensor2Value, humiditySensor2Value);
-    openPump(2, moisture2Percent, tempSensor2Value, humiditySensor2Value, curMode2);
+    openPump(2, moisture2Percent, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
     int moisture3Percent = map(moisture3Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
@@ -573,6 +751,6 @@ void loop() {
     Serial.println(humiditySensor3Value);
 
     publishSensorReading(3, moisture3Percent, tempSensor3Value, humiditySensor3Value);
-    openPump(3, moisture3Percent, tempSensor3Value, humiditySensor3Value, curMode3);
+    openPump(3, moisture3Percent, curMode3);
   }
 }

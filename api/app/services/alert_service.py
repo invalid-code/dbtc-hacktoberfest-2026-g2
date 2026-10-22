@@ -1,11 +1,14 @@
 """Evaluates the greenhouse alerts against the latest sensor reading only."""
 
+import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import SensorData
 from app.repositories import sensor_repo
+
+logger = logging.getLogger(__name__)
 
 SPOOKY_ALERT_MESSAGE = (
     "Spooky sensor data detected: the greenhouse is haunted and the latest "
@@ -21,11 +24,13 @@ async def evaluate_alerts(db: AsyncSession) -> list[dict[str, str]]:
     """
     latest = await sensor_repo.get_latest_sensor_data(db)
     if latest is None:
+        logger.info("no sensor readings yet, only the placeholder alert is raised")
         return [{"message": "No sensor readings yet", "severity": "warning"}]
 
     if latest.garbled:
         # garbled readings are an halloween easter egg, they say nothing about
         # the real state of the greenhouse so no other alert is raised
+        logger.info("the latest reading is garbled, only the spooky alert is raised")
         return [{"message": SPOOKY_ALERT_MESSAGE, "severity": "spooky"}]
 
     alerts: list[dict[str, str]] = []
@@ -46,5 +51,11 @@ async def evaluate_alerts(db: AsyncSession) -> list[dict[str, str]]:
                 "message": "Sensor readings are stale",
                 "severity": "warning",
             }
+        )
+    if alerts:
+        logger.info(
+            "%s alert(s) raised: %s",
+            len(alerts),
+            ", ".join(alert["message"] for alert in alerts),
         )
     return alerts

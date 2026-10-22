@@ -1,11 +1,36 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 
+import 'package:frontend/core/models/time_range.dart';
 import 'package:frontend/features/history/presentation/viewmodel/watering_history_view_model.dart';
 import 'package:frontend/features/home/presentation/viewmodel/home_view_model.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 import 'package:frontend/features/sensors/presentation/viewmodel/sensor_readings_view_model.dart';
 
 import 'support/fakes.dart';
+
+/// A history with a single watering at the given moment.
+http.Response Function(String path) historyAt(DateTime at) => (path) {
+  if (path == '/pump/history/') {
+    return http.Response(
+      '[{"id":2,"liters":3.5,"recorded_at":"${at.toIso8601String()}","pump_id":1}]',
+      200,
+    );
+  }
+  return responseFor(path);
+};
+
+/// A single reading taken at the given moment.
+http.Response Function(String path) readingAt(DateTime at) => (path) {
+  if (path == '/sensor/data/') {
+    return http.Response(
+      '[{"id":1,"moisture_level":42,"humidity":78,"temperature":23.5,'
+      '"recorded_at":"${at.toIso8601String()}","sensor_id":1,"garbled":false}]',
+      200,
+    );
+  }
+  return responseFor(path);
+};
 
 void main() {
   group('HomeViewModel', () {
@@ -24,7 +49,7 @@ void main() {
       expect(viewModel.todayUsageLiters, 12.5);
       expect(viewModel.alerts?.length, 1);
       expect(viewModel.history?.length, 1);
-      expect(viewModel.monthlyUsage, isNotEmpty);
+      expect(viewModel.usageBuckets, isNotEmpty);
 
       viewModel.dispose();
     });
@@ -108,17 +133,61 @@ void main() {
       viewModel.dispose();
     });
 
-    test('the monthly usage is normalised per month', () async {
+    test('the usage is grouped into the buckets of the range', () async {
       final viewModel = HomeViewModel(
-        api: fakeApi(responseFor),
+        api: fakeApi(
+          historyAt(DateTime.now().subtract(const Duration(minutes: 5))),
+        ),
         feed: FakeFeed(),
       )..start();
 
-      await waitFor(() => viewModel.monthlyUsage != null);
+      await waitFor(() => viewModel.usageBuckets != null);
 
-      final usage = viewModel.monthlyUsage!;
-      expect(usage.length, 12);
-      expect(usage.reduce((a, b) => a > b ? a : b), 1);
+      final buckets = viewModel.usageBuckets!;
+      expect(buckets.length, 1);
+      expect(buckets.first.value, 3.5);
+      expect(viewModel.usageMaxLiters, 3.5);
+
+      viewModel.dispose();
+    });
+
+    test('the usage chart can be filtered by another time unit', () async {
+      final viewModel = HomeViewModel(
+        api: fakeApi(
+          historyAt(DateTime.now().subtract(const Duration(minutes: 5))),
+        ),
+        feed: FakeFeed(),
+      )..start();
+
+      await waitFor(() => viewModel.usageBuckets != null);
+
+      viewModel.setUsageRange(TimeRange.minute);
+
+      expect(viewModel.usageRange, TimeRange.minute);
+      expect(viewModel.usageBuckets, isNotEmpty);
+
+      viewModel.setUsageRange(TimeRange.year);
+
+      expect(viewModel.usageRange, TimeRange.year);
+      expect(viewModel.usageBuckets, isNotEmpty);
+
+      viewModel.dispose();
+    });
+
+    test('the usage outside of the range is left out', () async {
+      final viewModel = HomeViewModel(
+        api: fakeApi(
+          historyAt(DateTime.now().subtract(const Duration(days: 3))),
+        ),
+        feed: FakeFeed(),
+      )..start();
+
+      await waitFor(() => viewModel.usageBuckets != null);
+      expect(viewModel.usageBuckets, isNotEmpty);
+
+      viewModel.setUsageRange(TimeRange.hour);
+
+      expect(viewModel.usageBuckets, isEmpty);
 
       viewModel.dispose();
     });
@@ -189,6 +258,45 @@ void main() {
 
       expect(viewModel.failed, isTrue);
       expect(viewModel.readings, isNull);
+
+      viewModel.dispose();
+    });
+
+    test('the trend charts can be filtered by another time unit', () async {
+      final viewModel = SensorReadingsViewModel(
+        api: fakeApi(
+          readingAt(DateTime.now().subtract(const Duration(minutes: 5))),
+        ),
+      )..start();
+
+      await waitFor(() => viewModel.readings != null);
+
+      expect(viewModel.moistureBuckets.length, 1);
+      expect(viewModel.moistureBuckets.first.value, 42);
+      expect(viewModel.temperatureBuckets.first.value, 23.5);
+
+      viewModel.setMoistureRange(TimeRange.minute);
+
+      expect(viewModel.moistureRange, TimeRange.minute);
+      expect(viewModel.moistureBuckets.length, 1);
+
+      viewModel.dispose();
+    });
+
+    test('the readings outside of the range are left out', () async {
+      final viewModel = SensorReadingsViewModel(
+        api: fakeApi(
+          readingAt(DateTime.now().subtract(const Duration(days: 3))),
+        ),
+      )..start();
+
+      await waitFor(() => viewModel.readings != null);
+      expect(viewModel.moistureBuckets, isEmpty);
+
+      viewModel.setMoistureRange(TimeRange.year);
+
+      expect(viewModel.moistureBuckets.length, 1);
+      expect(viewModel.moistureBuckets.first.value, 42);
 
       viewModel.dispose();
     });

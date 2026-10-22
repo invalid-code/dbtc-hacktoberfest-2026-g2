@@ -1,6 +1,16 @@
 """The SQLAlchemy models: the sensors, their readings, the pumps and the water they used."""
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -43,6 +53,7 @@ class Pump(Base):
 
     pump_mode = relationship("PumpMode", back_populates="pump", uselist=False)
     history_entries = relationship("PumpHistory", back_populates="pump")
+    parameter = relationship("PumpParameter", back_populates="pump", uselist=False)
 
 
 class PumpMode(Base):
@@ -73,3 +84,27 @@ class PumpHistory(Base):
     pump_id = Column(Integer, ForeignKey("pump.id"), nullable=True)
 
     pump = relationship("Pump", back_populates="history_entries")
+
+
+class PumpParameter(Base):
+    """The activation parameters of a single pump.
+
+    Gemini rewrites them: active says whether the pump may water at all, the
+    moisture threshold says when it waters, the interval says how often it
+    may do so, and the mode says how much water one activation gives.
+    """
+
+    __tablename__ = "pump_parameter"
+
+    id = Column(Integer, primary_key=True, index=True)
+    active = Column(Boolean, nullable=False, default=True)
+    moisture_threshold = Column(Integer, nullable=False, default=30)
+    activation_interval_minutes = Column(Integer, nullable=False, default=60)
+    mode = Column(Integer, nullable=False, default=0)
+    # why the parameters were changed the last time, in words
+    reason = Column(String, nullable=False, default="")
+    updated_at = Column(DateTime, nullable=False, default=datetime.now)
+
+    pump_id = Column(Integer, ForeignKey("pump.id"), nullable=False, unique=True)
+
+    pump = relationship("Pump", back_populates="parameter")

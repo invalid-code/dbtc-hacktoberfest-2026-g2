@@ -1,9 +1,9 @@
 # Microcontroller
 
-The Arduino sketch for the ESP32. It reads the sensors, waters the plants on
-its own, publishes the readings to the API over a WebSocket, reports how much
-water it used, and exposes a small HTTP server so the API can change the pump
-modes.
+The Arduino sketch for the ESP32. It reads the sensors, waters the plants,
+publishes the readings to the API over a WebSocket, reports how much water it
+used, reads the activation parameters the API decided from it, and exposes a
+small HTTP server so the API can change the pump modes.
 
 - [Hardware](#hardware)
 - [secrets.h](#secrets)
@@ -57,9 +57,9 @@ requests.
 | `WebSocketsClient.h` | The WebSocket to the API                                     |
 | `WebServer.h`        | The `/mode` HTTP server the API polls                        |
 | `ArduinoJson.h`      | Building and parsing the JSON payloads                       |
-| `HTTPClient.h`       | Posting the water usage                                      |
+| `HTTPClient.h`       | Posting the water usage and reading the activation parameters|
 | `DHT.h`              | The DHT11 sensors                                            |
-| `freertos/*`         | The queue and task that keep the HTTP POST off the main loop |
+| `freertos/*`         | The queue and tasks that keep the HTTP calls off the main loop|
 
 ## The main loop
 
@@ -92,20 +92,46 @@ and sets the pin modes.
 
 ## Watering logic
 
-`openPump()` runs a pump when the soil is dry:
+`openPump()` runs a pump when the soil is dry enough, when the API let it
+water, and when enough time has passed since the last activation:
 
 ```cpp
-void openPump(int pumpId, int moisturePercent, float tempValue, float humidityValue, int curMode) {
-  if (moisturePercent <= 30 && tempValue > 30.0 && humidityValue > 70.0) {
-    activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
-  } else if (moisturePercent <= 30) {
-    activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
+void openPump(int pumpId, int moisturePercent, int curMode) {
+  ActivationParameters parameters = readParameters(pumpId);
+
+  if (!parameters.active) {
+    Serial.printf("Pump %d does not water, the API switched it off\n", pumpId);
+    return;
   }
+  if (moisturePercent > parameters.moistureThreshold) {
+    return;
+  }
+  if (hasActivated[pumpId] && parameters.intervalMs > 0 &&
+      millis() - lastActivationMs[pumpId] < parameters.intervalMs) {
+    return;
+  }
+
+  hasActivated[pumpId] = true;
+  lastActivationMs[pumpId] = millis();
+  activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
 }
 ```
 
-Both branches do the same thing — the second one is a superset of the first,
-so the temperature and humidity conditions have no effect.
+The parameters come from the API, which asks Gemini what every pump should do
+with the weather and the state of the greenhouse. They are:
+
+| Field                        | Meaning                                            |
+|-------------------------------|----------------------------------------------------|
+| `active`                     | whether the pump may water at all                  |
+| `moisture_threshold`         | the soil moisture the pump waters at, in percent    |
+| `activation_interval_minutes`| the minutes the pump waits between two activations  |
+
+The mode is not part of them: the mode still comes over the `/mode` server,
+the API pushes it when it changes.
+
+Before the API has answered, the sketch waters at **30 %** without a wait,
+the way it always did, and it keeps the last parameters it read when the API
+cannot be reached. The greenhouse never stops watering because of an outage.
 
 The pump decision always uses the **real** readings, even when a garbled
 reading is being published. The greenhouse keeps watering itself during the
@@ -164,14 +190,39 @@ the sensor loop:
 The queue holds 8 entries. A report is dropped with a log line if the queue is
 full.
 
+### Outbound: the activation parameters
+
+The `parametersTask` reads what the API decided for every pump every 60
+seconds and stores it, so the sensor loop can ask for it without waiting for
+the network:
+
+```json
+[
+  {"pump_id": 1, "active": true, "moisture_threshold": 28,
+   "activation_interval_minutes": 90, "mode": 1, "mode_liters": 0.0028,
+   "reason": "the soil is dry and it stays hot", "updated_at": "..."}
+]
+```
+
+The request is `GET {API_SERVER_URL}{PUMP_PARAMETERS_PATH}`, with
+`PUMP_PARAMETERS_PATH` set to `/pump/parameters/` in `secrets.h`. Only the
+`pump_id`, `active`, `moisture_threshold` and `activation_interval_minutes`
+fields are read; the rest is for the app.
+
+The parameters are written under a mutex, because the task writes them and the
+sensor loop reads them. A payload that is not a list, does not parse, or holds
+a pump outside 1, 2 and 3 is logged and ignored, and the last good
+parameters stay in place.
+
 ### Inbound: the `/mode` server
 
-The ESP32 runs a `WebServer` on port 80 with two handlers:
+The ESP32 runs a `WebServer` on port 80 with three handlers:
 
 | Method |  Path   |            Request            |                    Response                    |
 |--------|---------|-------------------------------|------------------------------------------------|
 |  GET   | `/mode` | —                             | `{"modes":{"1":"FAST","2":"SLOW","3":"DRIP"}}` |
 |  POST  | `/mode` | `{"pump": 1, "mode": "DRIP"}` | `{"pump":1,"mode":"DRIP"}`                     |
+|  GET   | `/parameters` | —                       | the activation parameters the device works with |
 
 `POST /mode` also accepts form arguments instead of a JSON body. It answers
 `400` with `{"error":"pump and mode are required"}` when the pump or the mode
@@ -215,7 +266,11 @@ raises a spooky alert instead of the threshold alerts, and the app shows a
 - **`humidity` is sent as a float** but the API schema declares it as an `int`.
   Pydantic coerces it only when it has no fractional part, so a fractional
   humidity would fail validation and drop the WebSocket connection.
-- **The `openPump()` branches are redundant**, as described in the watering
-  section.
+- **The parameters are only as good as the API.** The device waters at 30 %
+  without a wait until the API has answered at least once, and it keeps the
+  last parameters when the API goes away.
+- **A json boolean has to be read with a boolean default.** `entry["active"] |
+  0` always falls through to the default, because ArduinoJson does not treat a
+  boolean as an integer. `entry["active"] | true` is the right way.
 - **`secrets.h` and `api/.env` hold live credentials.** Both are git-ignored.
   Check they never get committed.

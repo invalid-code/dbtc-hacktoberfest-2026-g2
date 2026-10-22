@@ -1,5 +1,6 @@
 """The sensor behaviour: the sensors themselves and the readings they report."""
 
+import logging
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Sensor, SensorData
 from app.repositories import sensor_repo
 from app.schemas import SensorDataRequest
+
+logger = logging.getLogger(__name__)
 
 
 async def get_sensors(db: AsyncSession) -> list[Sensor]:
@@ -28,6 +31,14 @@ async def save_sensor_data(
     """
     await sensor_repo.get_or_create_sensor(db, body.sensor)
     recorded_at = body.recorded_at or datetime.now()
+    logger.info(
+        "sensor %s reported %s%% moisture, %s%% humidity and %.1f C%s",
+        body.sensor,
+        body.moisture_level,
+        body.humidity,
+        body.temperature,
+        " (garbled)" if body.garbled else "",
+    )
     return await sensor_repo.create_sensor_data(
         db=db,
         sensor_id=body.sensor,

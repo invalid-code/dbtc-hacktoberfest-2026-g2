@@ -9,6 +9,7 @@ from app.schemas import (
     PumpHistoryResponse,
     PumpModeRequest,
     PumpModeResponse,
+    PumpParameterResponse,
     PumpResponse,
     TodayUsageResponse,
 )
@@ -58,3 +59,9 @@ async def get_today_usage(db: AsyncSession = Depends(get_db)):
     """The litres used since local midnight."""
     liters = await pump_service.get_today_usage(db)
     return TodayUsageResponse(liters=liters)
+
+
+@router.get("/parameters/", response_model=list[PumpParameterResponse])
+async def get_pump_parameters(db: AsyncSession = Depends(get_db)):
+    """The activation parameters of every pump, as Gemini left them."""
+    return await pump_service.get_pump_parameters(db)

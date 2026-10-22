@@ -68,7 +68,10 @@ class _HomeViewState extends State<HomeView> {
                                   children: [
                                     Expanded(
                                       child: UsageChart(
-                                        monthlyUsage: _viewModel.monthlyUsage,
+                                        buckets: _viewModel.usageBuckets,
+                                        maxLiters: _viewModel.usageMaxLiters,
+                                        range: _viewModel.usageRange,
+                                        onRangeChanged: _viewModel.setUsageRange,
                                         failed: _viewModel.historyFailed,
                                       ),
                                     ),
@@ -85,7 +88,10 @@ class _HomeViewState extends State<HomeView> {
                               : Column(
                                   children: [
                                     UsageChart(
-                                      monthlyUsage: _viewModel.monthlyUsage,
+                                      buckets: _viewModel.usageBuckets,
+                                      maxLiters: _viewModel.usageMaxLiters,
+                                      range: _viewModel.usageRange,
+                                      onRangeChanged: _viewModel.setUsageRange,
                                       failed: _viewModel.historyFailed,
                                     ),
                                     const SizedBox(height: 16),

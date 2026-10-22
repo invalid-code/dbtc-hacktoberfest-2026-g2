@@ -1,8 +1,12 @@
 """Keeps the set of connected sockets and broadcasts readings to all of them."""
 
+import logging
+
 from fastapi import WebSocket
 
 from app.models import SensorData
+
+logger = logging.getLogger(__name__)
 
 active_websockets: set[WebSocket] = set()
 
@@ -23,14 +27,24 @@ async def broadcast_sensor_data(sensor_data: SensorData) -> None:
                 }
             )
         except Exception:
+            logger.warning(
+                "a client could not receive the reading, dropping it", exc_info=True
+            )
             disconnected.append(client)
     active_websockets.difference_update(disconnected)
+    logger.info(
+        "reading of sensor %s broadcast to %s client(s)",
+        sensor_data.sensor_id,
+        len(active_websockets),
+    )
 
 
 async def connect(websocket: WebSocket) -> None:
     await websocket.accept()
     active_websockets.add(websocket)
+    logger.info("%s client(s) are connected", len(active_websockets))
 
 
 async def disconnect(websocket: WebSocket) -> None:
     active_websockets.discard(websocket)
+    logger.info("%s client(s) are connected", len(active_websockets))

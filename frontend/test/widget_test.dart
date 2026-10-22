@@ -100,6 +100,32 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('the usage chart can be filtered by another time unit', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(_app(responseFor));
+    await _pump(tester);
+
+    expect(find.text('Months'), findsOneWidget);
+
+    await tester.tap(find.text('Months'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Minutes'), findsOneWidget);
+    expect(find.text('Years'), findsOneWidget);
+
+    await tester.tap(find.text('Minutes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Minutes'), findsOneWidget);
+    expect(find.text('Months'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('alerts panel keeps its height without alerts', (
     WidgetTester tester,
   ) async {

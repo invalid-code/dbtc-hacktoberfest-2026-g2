@@ -86,6 +86,11 @@ async def sync_pump_modes(db: AsyncSession) -> None:
             except Exception:
                 logger.warning("could not set mode for pump %s", pump_id, exc_info=True)
                 continue
+            logger.info(
+                "pump %s was switched to %s mode by the device",
+                pump_id,
+                INDEX_MODE.get(mode, "FAST"),
+            )
             await pump_repo.record_observed_mode(
                 db,
                 pump_id=pump_id,

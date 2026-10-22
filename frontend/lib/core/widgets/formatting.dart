@@ -1,14 +1,33 @@
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 
+/// The three letter names of the months, used by the axis of the graphs.
+const shortMonthNames = [
+  'JAN',
+  'FEB',
+  'MAR',
+  'APR',
+  'MAY',
+  'JUN',
+  'JUL',
+  'AUG',
+  'SEP',
+  'OCT',
+  'NOV',
+  'DEC',
+];
+
 /// The name of the pump of a watering record, `Pump` when the pump is unknown.
 String pumpLabel(PumpHistoryEntry entry) =>
     entry.pump == null ? 'Pump' : 'Pump #${entry.pump}';
 
-/// The volume in liters, without decimals when the amount is whole.
-String formatLiters(double liters) {
-  final num value = liters == liters.roundToDouble() ? liters.toInt() : liters;
-  return '$value L';
+/// A number without the decimals when it is whole.
+String formatNumber(double value) {
+  final num number = value == value.roundToDouble() ? value.toInt() : value;
+  return '$number';
 }
+
+/// The volume in liters, without decimals when the amount is whole.
+String formatLiters(double liters) => '${formatNumber(liters)} L';
 
 /// The time of a reading as `h:mm AM/PM`.
 String formatTime(DateTime? recordedAt) {

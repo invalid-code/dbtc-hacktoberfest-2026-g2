@@ -25,6 +25,52 @@ async def get_latest_sensor_data(db: AsyncSession) -> SensorData | None:
     return result.scalars().first()
 
 
+async def get_latest_reading_per_sensor(
+    db: AsyncSession,
+) -> dict[int, SensorData]:
+    """The most recent reading of every sensor, keyed by the sensor id."""
+    newest = (
+        select(
+            SensorData.sensor_id,
+            func.max(SensorData.recorded_at).label("recorded_at"),
+        )
+        .group_by(SensorData.sensor_id)
+        .subquery()
+    )
+    result = await db.execute(
+        select(SensorData).join(
+            newest,
+            (SensorData.sensor_id == newest.c.sensor_id)
+            & (SensorData.recorded_at == newest.c.recorded_at),
+        )
+    )
+    return {reading.sensor_id: reading for reading in result.scalars().all()}
+
+
+async def get_recent_readings_per_sensor(
+    db: AsyncSession, limit: int = 6
+) -> dict[int, list[SensorData]]:
+    """The last readings of every sensor, newest first.
+
+    The garbled readings are left out, their numbers are made up.
+    """
+    position = func.row_number().over(
+        partition_by=SensorData.sensor_id,
+        order_by=SensorData.recorded_at.desc(),
+    ).label("position")
+    result = await db.execute(
+        select(SensorData, position)
+        .where(SensorData.garbled.is_(False))
+        .order_by(SensorData.sensor_id, position)
+    )
+
+    readings: dict[int, list[SensorData]] = {}
+    for reading, rank in result.all():
+        if rank <= limit:
+            readings.setdefault(reading.sensor_id, []).append(reading)
+    return readings
+
+
 async def get_recent_sensor_data(
     db: AsyncSession, limit: int = 10
 ) -> list[SensorData]:

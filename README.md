@@ -75,6 +75,17 @@ ESP32 (after a pump runs)  ──POST /pump/history/──▶  API
 app                                                 ──GET /pump/history/──▶ API
 ```
 
+**4. Weather — outside → AI → pumps**
+
+```
+Open-Meteo (hourly)  ──▶  API weather service
+                            ├─▶ reads the forecast and the climate
+                            └─▶ Gemini reads them with the state of the greenhouse
+                                 ├─▶ decides when each pump may water
+                                 ├─▶ the mode goes to the device, the poller pushes it
+                                 └─▶ the ESP32 reads the parameters and waters by them
+```
+
 ### Shared contract
 
 These shapes are agreed between all three parts. Changing one means changing
@@ -172,12 +183,21 @@ Create `api/.env`:
 ```text
 DB_CONN_STR=postgresql+asyncpg://postgres:password@localhost:5432/greenhouse
 FRONTEND_URL=http://localhost:8080
+WEATHER_LATITUDE=14.5995
+WEATHER_LONGITUDE=120.9842
 ```
 
 `FRONTEND_URL` is the CORS allow-list. It accepts a comma-separated list of
 origins, and `*` allows everything. Set `DEVICE_URL` to the ESP32's IP address
 to enable pump-mode polling (see the [microcontroller
-doc](microcontroller/README.md#api-device-polling)).
+doc](microcontroller/README.md#api-device-polling)). `WEATHER_LATITUDE` and
+`WEATHER_LONGITUDE` say where the greenhouse stands, the weather service asks
+for the forecast and the climate of that place and adjusts the pumps with it
+(see the [weather doc](api/README.md#the-weather-service)).
+
+The API logs every request to the console. `LOG_LEVEL` and `LOG_FORMAT` in
+`api/.env` say how much is logged and whether it is plain text or json, see
+the [logging doc](api/README.md#logging).
 
 Then run the migrations and start the service:
 
@@ -236,9 +256,10 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Set `GEMINI_API_KEY` to a Google AI Studio key to enable the AI endpoints, and
-optionally `GEMINI_MODEL` to pick a different model (default
-`gemini-3.8-flash`).
+Set `WEATHER_LATITUDE` and `WEATHER_LONGITUDE` to the place of the greenhouse
+so the weather service can adjust the pumps, and set `WEATHER_ENABLED=false`
+to turn that service off. Set `GEMINI_API_KEY` to a Google AI Studio key to
+let Gemini decide how the pumps behave; without it the rules decide.
 
 ### Automated migrations on `main`
 
@@ -282,22 +303,21 @@ the usual threshold alerts while a garbled reading is the latest one, and the
 app marks the readings as haunted. The microcontroller keeps using the real
 readings for the pump logic, so the greenhouse keeps watering itself.
 
-## AI endpoints
+## The automatic watering
 
-When `GEMINI_API_KEY` is set, the API answers with Gemini. Both endpoints read
-the latest sensor reading, the recent readings, the pump history and the
-active alerts, and use that state as context.
+The API runs a background service that keeps the pumps in step with the
+weather. It reads the forecast of the next days and the climate of the place
+from [Open-Meteo](https://open-meteo.com), adds the state of the greenhouse,
+and asks **Gemini** what every pump should do: whether it may water at all,
+the moisture threshold it waters at, the minutes it waits between two
+activations, and the mode it waters in. The mode is what the microcontroller
+gets, so it is how the amount of water is decided.
 
-- `GET /gemini/insight/` returns a short insight and the next action to take.
-- `POST /gemini/ask/` takes `{"question": "..."}` and answers it about the
-  greenhouse.
+Without a `GEMINI_API_KEY` the plain rules decide instead, and the answer is
+always clamped into its limits before it is stored.
 
-```json
-{
-  "insight": "Soil moisture is trending down over the last readings, so the next watering is due soon.",
-  "model": "gemini-3.8-flash"
-}
-```
+`GET /pump/parameters/` shows what was decided and why. See the
+[weather doc](api/README.md#the-weather-service) for the details.
 
 ## Running the tests
 
@@ -325,9 +345,11 @@ flutter test
   without adding auth first.
 - **`GET /sensor/data/` returns the whole table**, with no pagination, filter
   or ordering. It will grow without bound.
+- **The pump activation parameters are not shown.** Gemini writes them, the
+  API exposes them at `GET /pump/parameters/` and the ESP32 waters by them,
+  but the app has no screen for them yet.
 - **The pump list in the dashboard is hard-coded** to three cards in
   `frontend/lib/features/home/presentation/home_view.dart` rather than driven
   by the pumps the API returns.
-- **The `/gemini/*` endpoints are not used by the app** yet.
 - **The `observed_mode` and `last_seen_at` fields** the API exposes for pump
   modes are not read by the frontend.

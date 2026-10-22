@@ -92,18 +92,17 @@ class TodayUsageResponse(BaseModel):
     liters: float
 
 
-class GeminiAskRequest(BaseModel):
-    question: str
+class PumpParameterResponse(BaseModel):
+    """The activation parameters of a pump, as Gemini left them."""
 
-
-class GeminiInsightResponse(BaseModel):
-    insight: str
-    model: str
-
-
-class GeminiAskResponse(BaseModel):
-    answer: str
-    model: str
+    pump_id: int
+    active: bool
+    moisture_threshold: int
+    activation_interval_minutes: int
+    mode: int
+    mode_liters: float
+    reason: str
+    updated_at: datetime
 
 
 class HealthResponse(BaseModel):
