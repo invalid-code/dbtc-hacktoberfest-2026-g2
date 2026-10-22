@@ -51,6 +51,142 @@ async def test_a_garbled_reading_is_flagged_in_the_response(client, db_session):
     assert response.json()[0]["garbled"] is True
 
 
+async def test_the_readings_are_paged_newest_first(client, db_session):
+    for hour, moisture in ((10, 10), (11, 11), (12, 12)):
+        await sensor_repo.create_sensor_data(
+            db=db_session,
+            sensor_id=1,
+            moisture_level=moisture,
+            humidity=50,
+            recorded_at=datetime(2026, 10, 31, hour, 0),
+            temperature=20.0,
+        )
+
+    response = await client.get("/sensor/data/?limit=2")
+
+    assert [reading["moisture_level"] for reading in response.json()] == [12, 11]
+
+    response = await client.get("/sensor/data/?limit=2&offset=2")
+
+    assert [reading["moisture_level"] for reading in response.json()] == [10]
+
+
+async def test_the_readings_can_be_filtered_by_time(client, db_session):
+    for hour, moisture in ((10, 10), (12, 12)):
+        await sensor_repo.create_sensor_data(
+            db=db_session,
+            sensor_id=1,
+            moisture_level=moisture,
+            humidity=50,
+            recorded_at=datetime(2026, 10, 31, hour, 0),
+            temperature=20.0,
+        )
+
+    response = await client.get(
+        "/sensor/data/?since=2026-10-31T11:00:00"
+    )
+    assert [reading["moisture_level"] for reading in response.json()] == [12]
+
+    response = await client.get(
+        "/sensor/data/?until=2026-10-31T11:00:00"
+    )
+    assert [reading["moisture_level"] for reading in response.json()] == [10]
+
+
+async def test_a_page_outside_the_bounds_is_rejected(client):
+    response = await client.get("/sensor/data/?limit=1001")
+    assert response.status_code == 422
+
+    response = await client.get("/sensor/data/?limit=0")
+    assert response.status_code == 422
+
+    response = await client.get("/sensor/data/?offset=-1")
+    assert response.status_code == 422
+
+
+async def test_the_readings_are_averaged_per_bucket(client, db_session):
+    for hour, minute, moisture in ((15, 5, 40), (15, 25, 44), (16, 5, 50)):
+        await sensor_repo.create_sensor_data(
+            db=db_session,
+            sensor_id=1,
+            moisture_level=moisture,
+            humidity=50,
+            recorded_at=datetime(2026, 10, 31, hour, minute),
+            temperature=20.0,
+        )
+
+    response = await client.get("/sensor/data/?bucket=hour")
+
+    assert response.status_code == 200
+    buckets = response.json()
+    assert [bucket["start"] for bucket in buckets] == [
+        "2026-10-31T16:00:00",
+        "2026-10-31T15:00:00",
+    ]
+    assert buckets[0]["moisture_level"] == 50.0
+    assert buckets[1]["moisture_level"] == 42.0
+    assert buckets[1]["readings"] == 2
+
+
+async def test_the_buckets_are_paged(client, db_session):
+    for hour in (15, 16, 17):
+        await sensor_repo.create_sensor_data(
+            db=db_session,
+            sensor_id=1,
+            moisture_level=hour,
+            humidity=50,
+            recorded_at=datetime(2026, 10, 31, hour, 0),
+            temperature=20.0,
+        )
+
+    response = await client.get("/sensor/data/?bucket=hour&limit=1&offset=1")
+
+    buckets = response.json()
+    assert len(buckets) == 1
+    assert buckets[0]["start"] == "2026-10-31T16:00:00"
+
+    response = await client.get(
+        "/sensor/data/?bucket=hour&since=2026-10-31T16:00:00"
+    )
+
+    assert [bucket["start"] for bucket in response.json()] == [
+        "2026-10-31T17:00:00",
+        "2026-10-31T16:00:00",
+    ]
+
+
+async def test_the_buckets_start_when_their_unit_starts(client, db_session):
+    await sensor_repo.create_sensor_data(
+        db=db_session,
+        sensor_id=1,
+        moisture_level=42,
+        humidity=78,
+        recorded_at=datetime(2026, 10, 31, 20, 15),
+        temperature=23.5,
+    )
+
+    expected = {
+        "minute": "2026-10-31T20:15:00",
+        "hour": "2026-10-31T20:00:00",
+        "day": "2026-10-31T00:00:00",
+        # the 31st is a Saturday, its week starts on Monday the 26th
+        "week": "2026-10-26T00:00:00",
+        "month": "2026-10-01T00:00:00",
+        "year": "2026-01-01T00:00:00",
+    }
+    for unit, start in expected.items():
+        response = await client.get(f"/sensor/data/?bucket={unit}")
+
+        assert response.status_code == 200
+        assert response.json()[0]["start"] == start
+
+
+async def test_an_unknown_bucket_is_rejected(client):
+    response = await client.get("/sensor/data/?bucket=fortnight")
+
+    assert response.status_code == 422
+
+
 async def test_the_pumps_are_listed(client):
     response = await client.get("/pump/")
 

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:frontend/core/models/time_range.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 
@@ -69,6 +70,34 @@ void main() {
     expect((await api.loadPumps()).map((pump) => pump.id), [1, 2]);
     expect((await api.loadPumpModes())[1], 2);
     expect(requested, ['/sensor/data/', '/pump/', '/pump/mode/']);
+  });
+
+  test('asks for a page of the readings and for the averaged series', () async {
+    final requested = <Uri>[];
+    final client = MockClient((request) async {
+      requested.add(request.url);
+      if (request.url.queryParameters['bucket'] != null) {
+        return http.Response(
+          '[{"start":"2026-10-21T00:00:00","moisture_level":41.5,'
+          '"humidity":77.5,"temperature":23.25,"readings":2}]',
+          200,
+        );
+      }
+      return http.Response(
+        '[{"id":1,"moisture_level":42,"humidity":78,"temperature":23.5,'
+        '"recorded_at":"2026-10-20T16:02:30","sensor_id":1}]',
+        200,
+      );
+    });
+    final api = GreenhouseApi(client: client);
+
+    await api.loadLatestSensorReading();
+    final buckets = await api.loadSensorBuckets(TimeRange.day);
+
+    expect(requested.first.queryParameters, {'limit': '1', 'offset': '0'});
+    expect(requested.last.queryParameters, {'bucket': 'day', 'limit': '31'});
+    expect(buckets.single.moisture, 41.5);
+    expect(buckets.single.readings, 2);
   });
 
   test('reports a failing endpoint instead of returning empty data', () async {

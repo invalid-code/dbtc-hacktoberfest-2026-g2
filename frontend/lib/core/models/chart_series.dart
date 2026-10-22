@@ -31,8 +31,8 @@ class ChartBucket {
   /// How far along the x axis the bucket sits, 0 at the left edge and 1 at
   /// the right edge.
   ///
-  /// It follows the time of the bucket, so the distance between two points is
-  /// the time between them and a unit without data leaves a gap.
+  /// It follows the place of the bucket in the range, so a unit without data
+  /// leaves a gap on the axis.
   final double fraction;
 }
 
@@ -98,29 +98,22 @@ class ChartSeries {
 
   /// The latest points of the range, one bucket each, the oldest first.
   ///
-  /// Every point is a reading of its own, so the mode does not apply.
+  /// Every point is a reading of its own, so the mode does not apply. The
+  /// readings share the axis evenly, their labels tell when they were taken.
   static List<ChartBucket> _latest(List<ChartPoint> points, TimeRange range) {
     final sorted = [...points]..sort((a, b) => a.at.compareTo(b.at));
     final start = sorted.length > range.slots
         ? sorted.length - range.slots
         : 0;
     final latest = sorted.sublist(start);
-    if (latest.isEmpty) return const [];
-    final first = latest.first.at;
-    final span = latest.last.at.difference(first).inMilliseconds;
+    final last = latest.length - 1;
     return [
       for (var i = 0; i < latest.length; i++)
         ChartBucket(
           start: latest[i].at,
           value: latest[i].value,
           label: _timeLabel(latest[i].at),
-          // The points are spread over the time they cover, the time between
-          // two readings is the distance between them.
-          fraction: span > 0
-              ? latest[i].at.difference(first).inMilliseconds / span
-              : latest.length > 1
-              ? i / (latest.length - 1)
-              : 1,
+          fraction: last > 0 ? i / last : 1,
         ),
     ];
   }

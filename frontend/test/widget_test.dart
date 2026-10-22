@@ -7,7 +7,7 @@ import 'package:frontend/main.dart';
 
 import 'support/fakes.dart';
 
-Widget _app(http.Response Function(String path) response) => GreenhouseApp(
+Widget _app(http.Response Function(Uri uri) response) => GreenhouseApp(
   api: () => fakeApi(response),
   feed: FakeFeed.new,
 );

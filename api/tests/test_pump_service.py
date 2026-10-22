@@ -64,9 +64,7 @@ async def test_the_history_keeps_the_pump_it_belongs_to(db_session):
 async def test_the_usage_of_today_only_counts_today(db_session):
     await pump_service.create_pump_history(
         db_session,
-        PumpHistoryRequest(
-            liters=4.0, recorded_at=datetime.now() - timedelta(hours=2)
-        ),
+        PumpHistoryRequest(liters=4.0, recorded_at=datetime.now()),
     )
     await pump_service.create_pump_history(
         db_session,

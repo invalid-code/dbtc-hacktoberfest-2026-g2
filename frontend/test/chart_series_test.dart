@@ -144,11 +144,12 @@ void main() {
       expect(buckets[1].fraction, closeTo(27 / 29, 0.001));
     });
 
-    test('the real time points are spaced by their time', () {
+    test('the real time readings are one place apart', () {
       final buckets = ChartSeries.group(
         points: [
           ChartPoint(at: DateTime(2026, 10, 22, 15, 10), value: 2),
-          // Three minutes after the first of the nine the span covers.
+          // The gaps between the readings do not change their place, the
+          // labels tell when they were taken.
           ChartPoint(at: DateTime(2026, 10, 22, 15, 13), value: 3),
           ChartPoint(at: DateTime(2026, 10, 22, 15, 19), value: 5),
         ],
@@ -158,23 +159,8 @@ void main() {
 
       expect(buckets.length, 3);
       expect(buckets[0].fraction, 0);
-      expect(buckets[1].fraction, closeTo(1 / 3, 0.001));
+      expect(buckets[1].fraction, closeTo(0.5, 0.001));
       expect(buckets[2].fraction, 1);
-    });
-
-    test('the real time points of the same moment are spread evenly', () {
-      final at = DateTime(2026, 10, 22, 15, 30);
-      final buckets = ChartSeries.group(
-        points: [
-          ChartPoint(at: at, value: 2),
-          ChartPoint(at: at, value: 3),
-        ],
-        range: TimeRange.realTime,
-        now: at,
-      );
-
-      expect(buckets[0].fraction, 0);
-      expect(buckets[1].fraction, 1);
     });
 
     test('the real time range keeps the latest points of their own', () {

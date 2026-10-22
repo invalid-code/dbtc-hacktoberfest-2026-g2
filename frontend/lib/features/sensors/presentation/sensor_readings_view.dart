@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/network/api_client.dart';
 import 'package:frontend/core/network/sensor_ws.dart';
-import 'package:frontend/core/widgets/chart_painter.dart';
 import 'package:frontend/core/widgets/conditions_card.dart';
 import 'package:frontend/core/widgets/panel.dart';
+import 'package:frontend/core/widgets/scrollable_chart.dart';
 import 'package:frontend/core/widgets/side_bar.dart';
 import 'package:frontend/core/widgets/time_range_filter.dart';
 import 'package:frontend/features/sensors/presentation/viewmodel/sensor_readings_view_model.dart';
-import 'package:frontend/features/sensors/presentation/widgets/line_chart_painter.dart';
 
 const _trendHeight = 280.0;
 
@@ -93,12 +92,10 @@ class _SensorReadingsViewState extends State<SensorReadingsView> {
                                     style: TextStyle(color: Colors.black54),
                                   ),
                                 )
-                              : CustomPaint(
-                                  painter: ChartPainter(
-                                    buckets: _viewModel.temperatureBuckets,
-                                    maxValue: 50,
-                                  ),
-                                  child: const SizedBox.expand(),
+                              : ScrollableChart(
+                                  buckets: _viewModel.temperatureBuckets,
+                                  range: _viewModel.temperatureRange,
+                                  maxValue: 50,
                                 ),
                         ),
                       ),
@@ -131,13 +128,12 @@ class _SensorReadingsViewState extends State<SensorReadingsView> {
                                     style: TextStyle(color: Colors.black54),
                                   ),
                                 )
-                              : CustomPaint(
-                                  painter: LineChartPainter(
-                                    buckets: _viewModel.moistureBuckets,
-                                    maxValue: 100,
-                                    valueSuffix: '%',
-                                  ),
-                                  child: const SizedBox.expand(),
+                              : ScrollableChart(
+                                  buckets: _viewModel.moistureBuckets,
+                                  range: _viewModel.moistureRange,
+                                  maxValue: 100,
+                                  valueSuffix: '%',
+                                  showValues: true,
                                 ),
                         ),
                       ),

@@ -1,6 +1,7 @@
 """The Pydantic request and response models of the HTTP surface."""
 
 from datetime import datetime
+from enum import Enum
 
 from pydantic import BaseModel
 
@@ -52,6 +53,31 @@ class SensorDataResponse(BaseModel):
     garbled: bool
 
     model_config = {"from_attributes": True}
+
+
+class BucketUnit(str, Enum):
+    """The units the readings of a series can be grouped by.
+
+    They are the units of the frontend's time ranges, so a chart asks for the
+    points it draws instead of every raw reading behind them.
+    """
+
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+    YEAR = "year"
+
+
+class SensorBucketResponse(BaseModel):
+    """The readings that fall in one unit of time, averaged into a single point."""
+
+    start: datetime
+    moisture_level: float
+    humidity: float
+    temperature: float
+    readings: int
 
 
 class PumpResponse(BaseModel):

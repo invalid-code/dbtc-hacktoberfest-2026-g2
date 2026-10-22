@@ -14,8 +14,8 @@ class FakeFeed extends SensorFeed {
   void connect() {}
 }
 
-http.Response responseFor(String path) {
-  switch (path) {
+http.Response responseFor(Uri uri) {
+  switch (uri.path) {
     case '/sensor/data/':
       return http.Response(
         '[{"id":1,"moisture_level":42,"humidity":78,"temperature":23.5,'
@@ -48,8 +48,8 @@ http.Response responseFor(String path) {
   }
 }
 
-http.Response emptyResponseFor(String path) {
-  switch (path) {
+http.Response emptyResponseFor(Uri uri) {
+  switch (uri.path) {
     case '/sensor/data/':
       return http.Response('[]', 200);
     case '/pump/history/':
@@ -59,12 +59,12 @@ http.Response emptyResponseFor(String path) {
     case '/alerts/':
       return http.Response('{"alerts":[]}', 200);
     default:
-      return responseFor(path);
+      return responseFor(uri);
   }
 }
 
-http.Response garbledResponseFor(String path) {
-  switch (path) {
+http.Response garbledResponseFor(Uri uri) {
+  switch (uri.path) {
     case '/sensor/data/':
       return http.Response(
         '[{"id":2,"moisture_level":666,"humidity":999,"temperature":-42.5,'
@@ -79,20 +79,20 @@ http.Response garbledResponseFor(String path) {
         200,
       );
     default:
-      return responseFor(path);
+      return responseFor(uri);
   }
 }
 
-http.Response failingResponseFor(String path) =>
+http.Response failingResponseFor(Uri uri) =>
     http.Response('boom', 500);
 
 GreenhouseApi fakeApi(
-  http.Response Function(String path) response, {
+  http.Response Function(Uri uri) response, {
   List<String>? calls,
 }) => GreenhouseApi(
   client: MockClient((request) async {
     calls?.add('${request.method} ${request.url.path}');
-    return response(request.url.path);
+    return response(request.url);
   }),
 );
 

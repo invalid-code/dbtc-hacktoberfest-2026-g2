@@ -10,26 +10,31 @@ import 'package:frontend/features/sensors/presentation/viewmodel/sensor_readings
 import 'support/fakes.dart';
 
 /// A history with a single watering at the given moment.
-http.Response Function(String path) historyAt(DateTime at) => (path) {
-  if (path == '/pump/history/') {
+http.Response Function(Uri uri) historyAt(DateTime at) => (uri) {
+  if (uri.path == '/pump/history/') {
     return http.Response(
       '[{"id":2,"liters":3.5,"recorded_at":"${at.toIso8601String()}","pump_id":1}]',
       200,
     );
   }
-  return responseFor(path);
+  return responseFor(uri);
 };
 
-/// A single reading taken at the given moment.
-http.Response Function(String path) readingAt(DateTime at) => (path) {
-  if (path == '/sensor/data/') {
+/// A single reading taken at the given moment, raw or averaged.
+http.Response Function(Uri uri) readingAt(DateTime at) => (uri) {
+  if (uri.path != '/sensor/data/') return responseFor(uri);
+  if (uri.queryParameters['bucket'] != null) {
     return http.Response(
-      '[{"id":1,"moisture_level":42,"humidity":78,"temperature":23.5,'
-      '"recorded_at":"${at.toIso8601String()}","sensor_id":1,"garbled":false}]',
+      '[{"start":"${at.toIso8601String()}","moisture_level":42,'
+      '"humidity":78,"temperature":23.5,"readings":1}]',
       200,
     );
   }
-  return responseFor(path);
+  return http.Response(
+    '[{"id":1,"moisture_level":42,"humidity":78,"temperature":23.5,'
+    '"recorded_at":"${at.toIso8601String()}","sensor_id":1,"garbled":false}]',
+    200,
+  );
 };
 
 void main() {
@@ -74,9 +79,9 @@ void main() {
 
     test('keeps the pumps when only the sensor readings fail', () async {
       final viewModel = HomeViewModel(
-        api: fakeApi((path) {
-          if (path == '/sensor/data/') return failingResponseFor(path);
-          return responseFor(path);
+        api: fakeApi((uri) {
+          if (uri.path == '/sensor/data/') return failingResponseFor(uri);
+          return responseFor(uri);
         }),
         feed: FakeFeed(),
       )..start();
@@ -282,7 +287,7 @@ void main() {
       expect(viewModel.moistureBuckets.first.value, 42);
       expect(viewModel.temperatureBuckets.first.value, 23.5);
 
-      viewModel.setMoistureRange(TimeRange.minute);
+      await viewModel.setMoistureRange(TimeRange.minute);
 
       expect(viewModel.moistureRange, TimeRange.minute);
       expect(viewModel.moistureBuckets.length, 1);
@@ -303,10 +308,10 @@ void main() {
       // The real time range keeps the latest readings, whatever their age.
       expect(viewModel.moistureBuckets.length, 1);
 
-      viewModel.setMoistureRange(TimeRange.hour);
+      await viewModel.setMoistureRange(TimeRange.hour);
       expect(viewModel.moistureBuckets, isEmpty);
 
-      viewModel.setMoistureRange(TimeRange.year);
+      await viewModel.setMoistureRange(TimeRange.year);
       expect(viewModel.moistureBuckets.length, 1);
       expect(viewModel.moistureBuckets.first.value, 42);
 

@@ -16,8 +16,36 @@ async def get_sensors(db: AsyncSession) -> list[Sensor]:
     return await sensor_repo.get_all_sensors(db)
 
 
-async def get_sensor_data(db: AsyncSession) -> list[SensorData]:
-    return await sensor_repo.get_all_sensor_data(db)
+async def get_sensor_data(
+    db: AsyncSession,
+    *,
+    limit: int,
+    offset: int = 0,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> list[SensorData]:
+    return await sensor_repo.get_sensor_data(
+        db, limit=limit, offset=offset, since=since, until=until
+    )
+
+
+async def get_sensor_buckets(
+    db: AsyncSession,
+    *,
+    unit: str,
+    limit: int,
+    offset: int = 0,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> list[dict]:
+    return await sensor_repo.get_sensor_buckets(
+        db,
+        unit=unit,
+        limit=limit,
+        offset=offset,
+        since=since,
+        until=until,
+    )
 
 
 async def save_sensor_data(

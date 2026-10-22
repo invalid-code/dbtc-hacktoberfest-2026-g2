@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:frontend/core/models/chart_series.dart';
 import 'package:frontend/core/models/time_range.dart';
-import 'package:frontend/core/widgets/chart_painter.dart';
 import 'package:frontend/core/widgets/panel.dart';
+import 'package:frontend/core/widgets/scrollable_chart.dart';
 import 'package:frontend/core/widgets/time_range_filter.dart';
 
 /// The panel with the water usage chart, filtered by a time unit.
@@ -57,12 +57,10 @@ class UsageChart extends StatelessWidget {
                   style: TextStyle(color: Colors.black54),
                 ),
               )
-            : CustomPaint(
-                painter: ChartPainter(
-                  buckets: buckets!,
-                  maxValue: maxLiters,
-                ),
-                child: const SizedBox.expand(),
+            : ScrollableChart(
+                buckets: buckets!,
+                range: range,
+                maxValue: maxLiters,
               ),
       ),
     );

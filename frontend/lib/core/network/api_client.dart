@@ -4,7 +4,9 @@
 // to the API through GreenhouseApi.
 import 'dart:convert';
 
+import 'package:frontend/core/models/time_range.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
+import 'package:frontend/features/sensors/data/sensor_bucket.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 import 'package:frontend/model/alert.dart';
 import 'package:frontend/model/pump_info.dart';
@@ -44,14 +46,31 @@ class GreenhouseApi {
 
   final http.Client _client;
 
+  /// The most recent reading, or null when nothing was ever recorded.
   Future<SensorReading?> loadLatestSensorReading() async {
-    final readings = await loadSensorReadings();
+    final readings = await loadSensorReadings(limit: 1);
     return readings.isEmpty ? null : readings.last;
   }
 
-  /// The readings, oldest first: the API returns them unordered.
-  Future<List<SensorReading>> loadSensorReadings() async {
-    final response = await _get('/sensor/data/');
+  /// A page of readings, oldest first: the API returns them newest first.
+  ///
+  /// [limit] bounds the page and [offset] skips the newest readings, so only
+  /// the readings a screen shows are downloaded.
+  Future<List<SensorReading>> loadSensorReadings({
+    int limit = 100,
+    int offset = 0,
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    final response = await _get(
+      '/sensor/data/',
+      query: {
+        'limit': '$limit',
+        'offset': '$offset',
+        if (since != null) 'since': since.toIso8601String(),
+        if (until != null) 'until': until.toIso8601String(),
+      },
+    );
     return _asList(response)
         .map(SensorReading.fromJson)
         .toList()
@@ -59,6 +78,29 @@ class GreenhouseApi {
         (a, b) => Comparable.compare(
           a.recordedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
           b.recordedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      );
+  }
+
+  /// The readings of the range, averaged per unit of the range, oldest first.
+  ///
+  /// The API groups the readings before it sends them, so a chart downloads
+  /// only the points it draws. One extra bucket is asked for, so the readings
+  /// that land right at the edge of the range are not lost.
+  Future<List<SensorBucket>> loadSensorBuckets(TimeRange range) async {
+    final unit = range.unit;
+    if (unit == null) {
+      throw ArgumentError.value(range, 'range', 'has no unit to bucket by');
+    }
+    final response = await _get(
+      '/sensor/data/',
+      query: {'bucket': unit, 'limit': '${range.slots + 1}'},
+    );
+    return _asList(response).map(SensorBucket.fromJson).toList()
+      ..sort(
+        (a, b) => Comparable.compare(
+          a.start ?? DateTime.fromMillisecondsSinceEpoch(0),
+          b.start ?? DateTime.fromMillisecondsSinceEpoch(0),
         ),
       );
   }
@@ -124,12 +166,13 @@ class GreenhouseApi {
   }
 
   /// A GET request, a status outside 2xx throws.
-  Future<dynamic> _get(String path) async {
+  Future<dynamic> _get(String path, {Map<String, String>? query}) async {
+    var uri = Uri.parse('$apiBaseUrl$path');
+    if (query != null && query.isNotEmpty) {
+      uri = uri.replace(queryParameters: query);
+    }
     final response = await _client
-        .get(
-          Uri.parse('$apiBaseUrl$path'),
-          headers: const {'Accept': 'application/json'},
-        )
+        .get(uri, headers: const {'Accept': 'application/json'})
         .timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
