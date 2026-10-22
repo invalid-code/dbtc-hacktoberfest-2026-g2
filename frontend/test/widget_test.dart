@@ -109,9 +109,9 @@ void main() {
     await tester.pumpWidget(_app(responseFor));
     await _pump(tester);
 
-    expect(find.text('Months'), findsOneWidget);
+    expect(find.text('Real-time'), findsOneWidget);
 
-    await tester.tap(find.text('Months'));
+    await tester.tap(find.text('Real-time'));
     await tester.pumpAndSettle();
 
     expect(find.text('Minutes'), findsOneWidget);
@@ -121,7 +121,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Minutes'), findsOneWidget);
-    expect(find.text('Months'), findsNothing);
+    expect(find.text('Real-time'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

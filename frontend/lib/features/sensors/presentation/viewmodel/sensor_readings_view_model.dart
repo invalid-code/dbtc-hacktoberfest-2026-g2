@@ -1,41 +1,67 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:frontend/core/models/chart_series.dart';
 import 'package:frontend/core/models/time_range.dart';
 import 'package:frontend/core/network/api_client.dart';
+import 'package:frontend/core/network/sensor_ws.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 
 /// Holds the sensor readings shown by the sensor readings screen.
+///
+/// The readings of the API are loaded once and the live feed adds the
+/// readings that come in, so the graphs keep up to date.
 class SensorReadingsViewModel extends ChangeNotifier {
-  SensorReadingsViewModel({GreenhouseApi? api})
-    : _api = api ?? GreenhouseApi();
+  SensorReadingsViewModel({GreenhouseApi? api, SensorFeed? feed})
+    : _api = api ?? GreenhouseApi(),
+      _feed = feed ?? SensorFeed();
 
   final GreenhouseApi _api;
+  final SensorFeed _feed;
+  StreamSubscription<SensorReading>? _sensorSub;
 
   List<SensorReading>? readings;
   bool failed = false;
 
+  /// The readings that came in over the live feed, they are kept so they are
+  /// not lost when the readings of the API arrive.
+  final List<SensorReading> _liveReadings = [];
+
   /// The time unit the temperature chart is filtered by.
-  TimeRange temperatureRange = TimeRange.hour;
+  TimeRange temperatureRange = TimeRange.realTime;
 
   /// The time unit the moisture chart is filtered by.
-  TimeRange moistureRange = TimeRange.hour;
+  TimeRange moistureRange = TimeRange.realTime;
 
-  /// The temperature of every unit of the range, averaged.
+  /// The temperature of every point of the range.
   List<ChartBucket> temperatureBuckets = const [];
 
-  /// The moisture of every unit of the range, averaged.
+  /// The moisture of every point of the range.
   List<ChartBucket> moistureBuckets = const [];
 
-  void start() => _load();
+  void start() {
+    _load();
+    _feed.connect();
+    _sensorSub = _feed.readings.listen(_onSensorReading);
+  }
 
   Future<void> _load() async {
     try {
-      readings = await _api.loadSensorReadings();
+      final loaded = await _api.loadSensorReadings();
+      readings = [...loaded, ..._liveReadings];
       _rebuildBuckets();
     } catch (_) {
       failed = true;
     }
+    notifyListeners();
+  }
+
+  /// A live reading joins the readings and the graphs are rebuilt.
+  void _onSensorReading(SensorReading reading) {
+    _liveReadings.add(reading);
+    readings = [...?readings, reading];
+    _rebuildBuckets();
     notifyListeners();
   }
 
@@ -55,7 +81,7 @@ class SensorReadingsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Groups the readings into the buckets of the two ranges.
+  /// Groups the readings into the points of the two ranges.
   void _rebuildBuckets() {
     temperatureBuckets = _buckets(
       (reading) => reading.temperature ?? 0,
@@ -67,7 +93,7 @@ class SensorReadingsViewModel extends ChangeNotifier {
     );
   }
 
-  /// The values of the readings, averaged per unit of the range.
+  /// The values of the readings, grouped by the unit of the range.
   List<ChartBucket> _buckets(
     double Function(SensorReading) value,
     TimeRange range,
@@ -86,7 +112,9 @@ class SensorReadingsViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sensorSub?.cancel();
     _api.dispose();
+    _feed.dispose();
     super.dispose();
   }
 }

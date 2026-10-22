@@ -238,8 +238,10 @@ void main() {
 
   group('SensorReadingsViewModel', () {
     test('loads the readings oldest first', () async {
-      final viewModel = SensorReadingsViewModel(api: fakeApi(responseFor))
-        ..start();
+      final viewModel = SensorReadingsViewModel(
+        api: fakeApi(responseFor),
+        feed: FakeFeed(),
+      )..start();
 
       await waitFor(() => viewModel.readings != null);
 
@@ -251,8 +253,10 @@ void main() {
     });
 
     test('reports a failure when the API does not answer', () async {
-      final viewModel = SensorReadingsViewModel(api: fakeApi(failingResponseFor))
-        ..start();
+      final viewModel = SensorReadingsViewModel(
+        api: fakeApi(failingResponseFor),
+        feed: FakeFeed(),
+      )..start();
 
       await waitFor(() => viewModel.failed);
 
@@ -267,10 +271,13 @@ void main() {
         api: fakeApi(
           readingAt(DateTime.now().subtract(const Duration(minutes: 5))),
         ),
+        feed: FakeFeed(),
       )..start();
 
       await waitFor(() => viewModel.readings != null);
 
+      expect(viewModel.temperatureRange, TimeRange.realTime);
+      expect(viewModel.moistureRange, TimeRange.realTime);
       expect(viewModel.moistureBuckets.length, 1);
       expect(viewModel.moistureBuckets.first.value, 42);
       expect(viewModel.temperatureBuckets.first.value, 23.5);
@@ -288,15 +295,49 @@ void main() {
         api: fakeApi(
           readingAt(DateTime.now().subtract(const Duration(days: 3))),
         ),
+        feed: FakeFeed(),
       )..start();
 
       await waitFor(() => viewModel.readings != null);
+
+      // The real time range keeps the latest readings, whatever their age.
+      expect(viewModel.moistureBuckets.length, 1);
+
+      viewModel.setMoistureRange(TimeRange.hour);
       expect(viewModel.moistureBuckets, isEmpty);
 
       viewModel.setMoistureRange(TimeRange.year);
-
       expect(viewModel.moistureBuckets.length, 1);
       expect(viewModel.moistureBuckets.first.value, 42);
+
+      viewModel.dispose();
+    });
+
+    test('a live reading joins the graphs', () async {
+      final feed = FakeFeed();
+      final viewModel = SensorReadingsViewModel(
+        api: fakeApi(
+          readingAt(DateTime.now().subtract(const Duration(minutes: 5))),
+        ),
+        feed: feed,
+      )..start();
+
+      await waitFor(() => viewModel.readings != null);
+      expect(viewModel.moistureBuckets.length, 1);
+
+      feed.publish(
+        SensorReading(
+          moisture: 77,
+          humidity: 60,
+          recordedAt: DateTime.now(),
+          temperature: 19,
+        ),
+      );
+      await waitFor(() => viewModel.readings?.length == 2);
+
+      expect(viewModel.moistureBuckets.length, 2);
+      expect(viewModel.moistureBuckets.last.value, 77);
+      expect(viewModel.temperatureBuckets.last.value, 19);
 
       viewModel.dispose();
     });

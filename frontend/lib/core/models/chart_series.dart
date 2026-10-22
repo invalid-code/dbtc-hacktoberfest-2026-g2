@@ -43,32 +43,37 @@ class ChartSeries {
 
   /// The buckets of the range that hold at least one point, oldest first.
   ///
-  /// The buckets of a range end now, the oldest one is `range.buckets` units
+  /// The buckets of a range end now, the oldest one is `range.slots` units
   /// old. The points outside of the range are dropped and the buckets without
   /// a point are left out, so the graph only shows the units with data.
+  ///
+  /// The real time range does not group the points by a unit of time, it
+  /// keeps the latest points of the range, one bucket each.
   static List<ChartBucket> group({
     required List<ChartPoint> points,
     required TimeRange range,
     BucketMode mode = BucketMode.sum,
     DateTime? now,
   }) {
+    if (range == TimeRange.realTime) return _latest(points, range);
+
     final end = now ?? DateTime.now();
-    final totals = List<double>.filled(range.buckets, 0);
-    final counts = List<int>.filled(range.buckets, 0);
+    final totals = List<double>.filled(range.slots, 0);
+    final counts = List<int>.filled(range.slots, 0);
     for (final point in points) {
       final index = _indexOf(point.at, end, range);
-      if (index < 0 || index >= range.buckets) continue;
+      if (index < 0 || index >= range.slots) continue;
       // The buckets are counted from now backwards, the list runs the other
       // way around.
-      final slot = range.buckets - 1 - index;
+      final slot = range.slots - 1 - index;
       totals[slot] += point.value;
       counts[slot] += 1;
     }
 
     final buckets = <ChartBucket>[];
-    for (var slot = 0; slot < range.buckets; slot++) {
+    for (var slot = 0; slot < range.slots; slot++) {
       if (counts[slot] == 0) continue;
-      final start = _startOf(range, end, range.buckets - 1 - slot);
+      final start = _startOf(range, end, range.slots - 1 - slot);
       buckets.add(
         ChartBucket(
           start: start,
@@ -80,6 +85,24 @@ class ChartSeries {
       );
     }
     return buckets;
+  }
+
+  /// The latest points of the range, one bucket each, the oldest first.
+  ///
+  /// Every point is a reading of its own, so the mode does not apply.
+  static List<ChartBucket> _latest(List<ChartPoint> points, TimeRange range) {
+    final sorted = [...points]..sort((a, b) => a.at.compareTo(b.at));
+    final start = sorted.length > range.slots
+        ? sorted.length - range.slots
+        : 0;
+    return [
+      for (final point in sorted.sublist(start))
+        ChartBucket(
+          start: point.at,
+          value: point.value,
+          label: _timeLabel(point.at),
+        ),
+    ];
   }
 
   /// How many units of the range separate the moment from the end of the
@@ -98,6 +121,8 @@ class ChartSeries {
         return (end.year - at.year) * 12 + end.month - at.month;
       case TimeRange.year:
         return end.year - at.year;
+      case TimeRange.realTime:
+        return 0;
     }
   }
 
@@ -124,6 +149,8 @@ class ChartSeries {
         return DateTime(end.year, end.month - index);
       case TimeRange.year:
         return DateTime(end.year - index);
+      case TimeRange.realTime:
+        return end;
     }
   }
 
@@ -141,8 +168,13 @@ class ChartSeries {
         return shortMonthNames[start.month - 1];
       case TimeRange.year:
         return '${start.year}';
+      case TimeRange.realTime:
+        return _timeLabel(start);
     }
   }
+
+  /// The time of a point on the x axis.
+  static String _timeLabel(DateTime at) => '${_pad(at.hour)}:${_pad(at.minute)}';
 
   /// The Monday of the week the moment belongs to.
   static DateTime _monday(DateTime at) =>

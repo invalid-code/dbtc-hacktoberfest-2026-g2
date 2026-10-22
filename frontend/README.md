@@ -104,7 +104,7 @@ GreenhouseApp(
 | `lib/model/pump_info.dart`                                                     | `PumpInfo`, the mode labels and `pumpModeLabel()`        |
 | `lib/core/network/api_client.dart`                                             | `GreenhouseApi`, the HTTP client, `GreenhouseSnapshot`   |
 | `lib/core/network/sensor_ws.dart`                                              | `SensorFeed`, the live WebSocket feed                    |
-| `lib/core/models/time_range.dart`                                              | `TimeRange`, the time units a graph is filtered by       |
+| `lib/core/models/time_range.dart`                                              | `TimeRange`, the time ranges a graph is filtered by      |
 | `lib/core/models/chart_series.dart`                                            | `ChartPoint`, `ChartBucket`, `ChartSeries.group`         |
 | `lib/core/widgets/panel.dart`                                                  | `Panel`, the shared card, `panelContentHeight`           |
 | `lib/core/widgets/conditions_card.dart`                                        | `ConditionsCard`, the metrics grid and the spooky banner |
@@ -247,23 +247,35 @@ its own time range filter. The charts scale their values before painting:
 moisture is scaled to 100 and temperature to 50, both clamped to the height of
 the chart.
 
+The screen opens the live feed, so the readings that come in over the
+WebSocket are added to the graphs while the screen is open.
+
 This screen's `ConditionsCard` shows only the sensor, so today's water usage
 renders as `—`.
 
 ## Time range filter
 
-Every graph can be filtered by a time unit. The filter is a chip in the panel
+Every graph can be filtered by a time range. The filter is a chip in the panel
 header (`TimeRangeFilter`), the same style as the sort toggle of the history
 screen.
 
-| Unit     | Buckets          | Window             | Label of a bucket |
-|----------|------------------|--------------------|-------------------|
-| `minute` | 60               | The last hour      | `15:28`           |
-| `hour`   | 24               | The last day       | `15:00`           |
-| `day`    | 30               | The last 30 days   | `OCT 20`          |
-| `week`   | 12               | The last 12 weeks  | `OCT 19`          |
-| `month`  | 12               | The last 12 months | `OCT`             |
-| `year`   | 5                | The last 5 years   | `2026`            |
+| Range      | Points | Window              | Label of a point |
+|------------|--------|---------------------|------------------|
+| `realTime` | 60     | The latest readings | `15:28`          |
+| `minute`   | 60     | The last hour       | `15:28`          |
+| `hour`     | 24     | The last day        | `15:00`          |
+| `day`      | 30     | The last 30 days    | `OCT 20`         |
+| `week`     | 12     | The last 12 weeks   | `OCT 19`         |
+| `month`    | 12     | The last 12 months  | `OCT`            |
+| `year`     | 5      | The last 5 years    | `2026`           |
+
+**Real-time is the default.** It does not group the readings by a unit of
+time: every reading is a point of its own and the latest 60 of them are
+plotted. The trend charts of the sensor readings screen are live — the screen
+opens the WebSocket feed and every reading that comes in is added to the
+readings and to the graphs. The water usage chart has no live feed, the API
+only sends the sensor readings over the socket, so it shows the latest
+waterings one point each.
 
 The filter does not ask the API for a range — the API returns every reading
 ever recorded and the filtering happens in the browser:
@@ -271,7 +283,8 @@ ever recorded and the filtering happens in the browser:
 1. `ChartSeries.group` drops the points outside of the window and groups the
    rest into one bucket per unit. The water usage of a bucket is added up
    (`BucketMode.sum`), the sensor readings of a bucket are averaged
-   (`BucketMode.average`).
+   (`BucketMode.average`). The real time range skips the grouping, every
+   point is a bucket of its own.
 2. The buckets that hold no point are left out, so the graph only shows the
    units with data.
 3. The view models keep the range and rebuild the buckets when it changes.
@@ -312,15 +325,15 @@ cd frontend
 flutter test
 ```
 
-The suite covers 51 tests:
+The suite covers 55 tests:
 
 | File                          | Tests |                                        What it covers                                        |
 |-------------------------------|-------|----------------------------------------------------------------------------------------------|
 | `test/api_client_test.dart`   |   4   | JSON parsing, the garbled flag, the requested paths, that failures throw                     |
-| `test/chart_series_test.dart` |   8   | Grouping the points into the buckets of a range, the labels of the axis, the dropped points  |
+| `test/chart_series_test.dart` |  11   | Grouping the points into the buckets of a range, the real time points, the labels of the axis |
 | `test/models_test.dart`       |  10   | Every model's `fromJson`, including the fallbacks for missing and broken values              |
 | `test/sensor_feed_test.dart`  |   6   | Parsing socket messages, ignoring non-readings, the feed stops after `dispose()`             |
-| `test/view_models_test.dart`  |  15   | Loading state, per-endpoint failure flags, live updates, mode updates, the time ranges      |
+| `test/view_models_test.dart`  |  16   | Loading state, per-endpoint failure flags, live updates, mode updates, the time ranges      |
 | `test/widget_test.dart`       |   8   | The three screens, navigation, the empty and error states, the spooky banner, the filter    |
 
 `test/support/fakes.dart` holds the shared harness:
@@ -352,3 +365,6 @@ network or socket is touched.
 - **`cupertino_icons` is declared but never imported.**
 - **The pump activation parameters are not shown.** The API writes them and
   exposes them at `GET /pump/parameters/`, the app has no screen for them.
+- **Only the sensor readings are live.** The WebSocket broadcasts the sensor
+  readings, there is no live feed for the waterings, so the usage chart only
+  changes when the screen is loaded.

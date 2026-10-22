@@ -29,7 +29,8 @@ GoRouter buildRouter({
     ),
     GoRoute(
       path: AppRoutes.sensorReading,
-      builder: (context, state) => SensorReadingsView(api: api?.call()),
+      builder: (context, state) =>
+          SensorReadingsView(api: api?.call(), feed: feed?.call()),
     ),
   ],
 );

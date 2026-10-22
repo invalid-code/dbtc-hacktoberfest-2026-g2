@@ -124,5 +124,58 @@ void main() {
       expect(buckets.first.start, monday);
       expect(buckets.first.label, 'OCT 19');
     });
+
+    test('the real time range keeps the latest points of their own', () {
+      final buckets = ChartSeries.group(
+        points: [
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 10), value: 2),
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 20), value: 3),
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 30), value: 5),
+        ],
+        range: TimeRange.realTime,
+        now: DateTime(2026, 10, 22, 15, 30),
+      );
+
+      expect(buckets.length, 3);
+      expect(buckets[0].value, 2);
+      expect(buckets[0].label, '15:10');
+      expect(buckets[2].value, 5);
+      expect(buckets[2].label, '15:30');
+    });
+
+    test('the real time range drops the points that do not fit', () {
+      final points = [
+        for (var i = 0; i < 70; i++)
+          ChartPoint(
+            at: DateTime(2026, 10, 22, 15, 30).subtract(Duration(minutes: i)),
+            value: i.toDouble(),
+          ),
+      ];
+
+      final buckets = ChartSeries.group(
+        points: points,
+        range: TimeRange.realTime,
+        now: DateTime(2026, 10, 22, 15, 30),
+      );
+
+      expect(buckets.length, 60);
+      expect(buckets.first.value, 59);
+      expect(buckets.last.value, 0);
+    });
+
+    test('the real time range sorts the points by time', () {
+      final buckets = ChartSeries.group(
+        points: [
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 30), value: 5),
+          ChartPoint(at: DateTime(2026, 10, 22, 15, 10), value: 2),
+        ],
+        range: TimeRange.realTime,
+        now: DateTime(2026, 10, 22, 15, 30),
+      );
+
+      expect(buckets.length, 2);
+      expect(buckets.first.value, 2);
+      expect(buckets.last.value, 5);
+    });
   });
 }

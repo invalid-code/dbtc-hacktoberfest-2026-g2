@@ -36,7 +36,7 @@ class HomeViewModel extends ChangeNotifier {
   bool historyFailed = false;
 
   /// The time unit the usage chart is filtered by.
-  TimeRange usageRange = TimeRange.month;
+  TimeRange usageRange = TimeRange.realTime;
 
   /// The biggest amount of water of a bucket, the chart is scaled to it.
   double get usageMaxLiters {

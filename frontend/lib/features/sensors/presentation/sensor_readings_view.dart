@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/core/network/api_client.dart';
+import 'package:frontend/core/network/sensor_ws.dart';
 import 'package:frontend/core/widgets/chart_painter.dart';
 import 'package:frontend/core/widgets/conditions_card.dart';
 import 'package:frontend/core/widgets/panel.dart';
@@ -12,9 +13,10 @@ const _trendHeight = 280.0;
 
 /// The current conditions plus the temperature and the moisture trend panels.
 class SensorReadingsView extends StatefulWidget {
-  const SensorReadingsView({super.key, this.api});
+  const SensorReadingsView({super.key, this.api, this.feed});
 
   final GreenhouseApi? api;
+  final SensorFeed? feed;
 
   @override
   State<SensorReadingsView> createState() => _SensorReadingsViewState();
@@ -26,7 +28,8 @@ class _SensorReadingsViewState extends State<SensorReadingsView> {
   @override
   void initState() {
     super.initState();
-    _viewModel = SensorReadingsViewModel(api: widget.api)..start();
+    _viewModel = SensorReadingsViewModel(api: widget.api, feed: widget.feed)
+      ..start();
   }
 
   @override

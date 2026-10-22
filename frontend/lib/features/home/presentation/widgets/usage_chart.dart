@@ -12,7 +12,7 @@ class UsageChart extends StatelessWidget {
     super.key,
     this.buckets,
     this.maxLiters = 1,
-    this.range = TimeRange.month,
+    this.range = TimeRange.realTime,
     this.onRangeChanged,
     this.failed = false,
   });
