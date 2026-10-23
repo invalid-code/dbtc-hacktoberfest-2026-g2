@@ -5,26 +5,13 @@
 import 'dart:convert';
 
 import 'package:frontend/core/models/time_range.dart';
+import 'package:frontend/core/network/app_config.dart';
 import 'package:frontend/features/history/data/pump_history_entry.dart';
 import 'package:frontend/features/sensors/data/sensor_bucket.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 import 'package:frontend/model/alert.dart';
 import 'package:frontend/model/pump_info.dart';
 import 'package:http/http.dart' as http;
-
-const _apiBaseUrlRaw = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://localhost:8000',
-);
-
-/// The base URL of the API, it comes from the `API_BASE_URL` compile time
-/// define.
-///
-/// The trailing slash is stripped because every path used here already carries
-/// one.
-final apiBaseUrl = _apiBaseUrlRaw.endsWith('/')
-    ? _apiBaseUrlRaw.substring(0, _apiBaseUrlRaw.length - 1)
-    : _apiBaseUrlRaw;
 
 /// How long a request may take before it is given up on.
 const _requestTimeout = Duration(seconds: 10);

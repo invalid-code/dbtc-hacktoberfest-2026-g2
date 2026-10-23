@@ -143,22 +143,27 @@ flutter pub get
 flutter run -d chrome
 ```
 
-The API base URL is a compile-time constant:
+The API base URL comes from the first of these that is set:
 
-```dart
-const _apiBaseUrlRaw = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://localhost:8000',
-);
-```
+1. the `API_BASE_URL` compile-time define,
+2. `config.json` served next to `index.html`,
+3. `http://localhost:8000`.
 
-Override it at build or run time:
+For development, pass the define:
 
 ```powershell
 flutter run -d chrome --dart-define=API_BASE_URL=https://your-api.example.com
 ```
 
-`frontend/config.json` holds a local copy of the same value for convenience. Nothing reads it — it is a git-ignored scratch file. The real configuration surface is the `--dart-define` flag.
+For a deployed web build, `frontend/web/config.json` is copied into `build/web` and read at startup, so the production server can change the API origin without rebuilding:
+
+```json
+{
+  "API_BASE_URL": "https://your-api.example.com"
+}
+```
+
+A missing or malformed `config.json` falls back to the default.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

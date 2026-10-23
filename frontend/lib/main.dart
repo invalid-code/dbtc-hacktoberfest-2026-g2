@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:frontend/core/network/api_client.dart';
+import 'package:frontend/core/network/app_config.dart';
 import 'package:frontend/core/network/sensor_ws.dart';
 import 'package:frontend/router/app_router.dart';
 
-void main() => runApp(const GreenhouseApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadAppConfig();
+  runApp(const GreenhouseApp());
+}
 
 /// The root of the app: it owns the router and the theme.
 ///

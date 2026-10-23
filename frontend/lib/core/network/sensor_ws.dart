@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-import 'package:frontend/core/network/api_client.dart';
+import 'package:frontend/core/network/app_config.dart';
 import 'package:frontend/features/sensors/data/sensor_reading.dart';
 
 /// Turns a websocket message into a reading. Returns null when the message is

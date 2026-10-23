@@ -423,10 +423,27 @@ The secret can also live in a GitHub environment named `production`; the workflo
 
 #### The frontend
 
-Build the Flutter app with the deployed API origin, without a trailing slash:
+Build the Flutter app:
 
 ```powershell
 cd frontend
+flutter build web
+```
+
+The API origin is read at runtime from `config.json` next to `index.html`, so the
+server hosting the build can change it without rebuilding. `frontend/web/config.json`
+is copied into `build/web`; set `API_BASE_URL` there before serving, or replace
+`build/web/config.json` after the build:
+
+```json
+{
+  "API_BASE_URL": "https://your-api.example.com"
+}
+```
+
+A build-time override is still available, and takes precedence over the file:
+
+```powershell
 flutter build web --dart-define=API_BASE_URL=https://your-api.example.com
 ```
 

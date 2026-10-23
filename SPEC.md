@@ -245,10 +245,11 @@ and the device fetches them every minute.
   - `/` - dashboard,
   - `/watering-history` - watering history,
   - `/sensor-reading` - sensor readings and trends.
-- **UI-2** The API base URL MUST come from the compile-time
-  `API_BASE_URL` define, defaulting to `http://localhost:8000`. A trailing
-  slash MUST be stripped. HTTP requests MUST time out after 10 seconds and
-  non-2xx responses MUST throw.
+- **UI-2** The API base URL MUST come from the first of: the compile-time
+  `API_BASE_URL` define, `config.json` served next to `index.html`, and the
+  `http://localhost:8000` default. A missing or malformed `config.json` MUST
+  be ignored. A trailing slash MUST be stripped. HTTP requests MUST time out
+  after 10 seconds and non-2xx responses MUST throw.
 - **UI-3** The live feed MUST derive its WebSocket URL from the API base URL by
   replacing `http` with `ws` and appending `/mc-ws/`. It MUST reconnect after 5
   seconds and MUST ignore messages that are not sensor readings.
@@ -588,12 +589,21 @@ for years. Chart x-axis positions are based on real time, not on bucket index.
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `API_BASE_URL` | `http://localhost:8000` | Compile-time API origin, no trailing slash |
+| `API_BASE_URL` | `http://localhost:8000` | API origin from the compile-time define or the runtime `config.json`, no trailing slash |
 
 Build example:
 
 ```sh
 flutter build web --dart-define=API_BASE_URL=https://api.example.com
+```
+
+Runtime override, read from `config.json` next to `index.html` when the build
+define is absent:
+
+```json
+{
+  "API_BASE_URL": "https://api.example.com"
+}
 ```
 
 ### 9.3 Firmware
