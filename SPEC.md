@@ -183,7 +183,9 @@ and the device fetches them every minute.
   `moisture_level`, `humidity`, `temperature`, and `readings`. Weeks MUST start
   on Monday. Out-of-range `limit` or `offset` values MUST be rejected with 422.
 - **API-6** The WebSocket endpoint `/mc-ws/` MUST accept, validate, store, and
-  broadcast sensor readings. The broadcast MUST add an ISO-8601 `recorded_at`
+  broadcast sensor readings. On connect it MUST register the microcontroller
+  and provision sensors `1`, `2`, `3` and pumps `1`, `2`, `3` (with FAST mode
+  rows) if they do not exist. The broadcast MUST add an ISO-8601 `recorded_at`
   and MUST keep the key `sensor` (not `sensor_id`). A malformed payload MUST
   close the connection.
 - **API-7** A reading for an unknown sensor MUST create the sensor row on

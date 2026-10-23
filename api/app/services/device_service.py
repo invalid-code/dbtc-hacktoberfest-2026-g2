@@ -10,10 +10,25 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.modes import INDEX_MODE, MODE_INDEX, mode_index_from_name
 from app.repositories import pump_repo
+from app.services import pump_service, sensor_service
 
 logger = logging.getLogger(__name__)
 
 DEVICE_TIMEOUT_SECONDS = 5.0
+
+
+async def register_microcontroller(
+    db: AsyncSession,
+    client: str | None = None,
+) -> None:
+    """Register a microcontroller and provision the greenhouse it controls."""
+    await sensor_service.ensure_sensors(db)
+    await pump_service.ensure_pumps(db)
+    await pump_service.ensure_pump_modes(db)
+    logger.info(
+        "microcontroller %s registered with sensors 1-3 and pumps 1-3",
+        client or "connected",
+    )
 
 
 def device_configured() -> bool:

@@ -391,6 +391,8 @@ A garbled reading short-circuits everything else: the thresholds would be judgin
 
 `/mc-ws/` is the live channel. The ESP32 connects to it and publishes readings; the API stores each one and broadcasts it to every socket on the channel, including the app.
 
+When a socket connects, the API registers the microcontroller and provisions the greenhouse: sensors `1`, `2`, `3` and pumps `1`, `2`, `3` are created if they are missing, and every pump gets a FAST mode row.
+
 Published payload:
 
 ```json
@@ -587,14 +589,16 @@ Fixtures:
 | `database`   | Creates the schema once per session, disposes the engine and deletes the file afterwards |
 | `clean_db`   | Empties every table and re-seeds pumps 1–3 in `FAST` mode, before and after each test    |
 | `db_session` | A database session for unit tests                                                        |
+| `empty_db_session` | A database session over a greenhouse with no sensors, pumps or modes                |
 | `client`     | An `httpx.AsyncClient` talking to the app in process over `ASGITransport`                |
 
-The suite covers 111 tests:
+The suite covers 114 tests:
 
 |            File             | Tests |                                                    What it covers                                                    |
 |-----------------------------|-------|----------------------------------------------------------------------------------------------------------------------|
 | `test_api.py`               |  19   | Every REST endpoint, paging and bucketing the readings, the 422s on bad queries and the 404 on an unknown path        |
-| `test_websocket.py`         |   3   | A real uvicorn server: a reading is stored and broadcast, the garbled flag survives, a malformed payload is rejected |
+| `test_websocket.py`         |   4   | A real uvicorn server: connecting provisions the sensors, a reading is stored and broadcast, the garbled flag survives, a malformed payload is rejected |
+| `test_device_service.py`    |   2   | Registering a microcontroller provisions the sensors, pumps and modes, and is idempotent                              |
 | `test_alert_service.py`     |   8   | Every alert rule, including that a garbled reading suppresses the others and that the latest reading wins            |
 | `test_pump_service.py`      |   8   | Pump and mode seeding, mode updates, history ordering, today's usage                                                 |
 | `test_sensor_service.py`    |   6   | Field persistence, the garbled flag, explicit timestamps, auto-created sensors, "latest" and "recent" ordering       |

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:frontend/model/pump_info.dart';
 
-/// One card per pump, with the mode dropdown and the start/stop button.
+/// One card per pump, with the mode dropdown.
 class PumpCard extends StatefulWidget {
   const PumpCard({
     super.key,
@@ -22,7 +22,6 @@ class PumpCard extends StatefulWidget {
 }
 
 class _PumpCardState extends State<PumpCard> {
-  bool running = true;
   late String mode;
 
   @override
@@ -53,11 +52,6 @@ class _PumpCardState extends State<PumpCard> {
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 12),
-        Text(
-          running ? 'Running' : 'Stopped',
-          style: const TextStyle(fontSize: 16),
-        ),
-        const SizedBox(height: 6),
         DropdownButton<String>(
           value: mode,
           isDense: true,
@@ -69,23 +63,6 @@ class _PumpCardState extends State<PumpCard> {
               )
               .toList(),
           onChanged: _changeMode,
-        ),
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: running
-                  ? const Color(0xff760202)
-                  : const Color(0xff384b2c),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(5),
-              ),
-            ),
-            // The button only toggles a local flag, it never reaches the API.
-            onPressed: () => setState(() => running = !running),
-            child: Text(running ? 'Stop' : 'Start'),
-          ),
         ),
       ],
     ),

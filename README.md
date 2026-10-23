@@ -129,7 +129,7 @@ Component-level documentation:
                     └────────────────────────────┘
 ```
 
-The microcontroller and the app share one WebSocket channel. The device publishes readings to `/mc-ws/`, the API stores each one and broadcasts it to every connected socket, and the app renders it live.
+The microcontroller and the app share one WebSocket channel. When a socket connects, the API registers the microcontroller and provisions the greenhouse's sensors and pumps. The device publishes readings to `/mc-ws/`, the API stores each one and broadcasts it to every connected socket, and the app renders it live.
 
 Pump modes travel the other way: the app writes the desired mode to the API, the API stores it, and the API's poller pushes it to the device over HTTP.
 

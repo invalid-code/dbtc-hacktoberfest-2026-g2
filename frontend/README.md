@@ -360,12 +360,12 @@ The rest of the palette is hard-coded where it is used:
 - **Current Conditions** — today's water usage, soil moisture, humidity and temperature, in a grid that goes 4 → 2 → 1 columns as the width shrinks.
 - **Water Usage History** — a hand-drawn line chart of the water used, with a time range filter in the panel header.
 - **History Summary** — today's and yesterday's waterings, side by side with the chart on wide screens.
-- **Sensor Status** — a card per pump with a mode dropdown and a start/stop button.
+- **Sensor Status** — a card per pump with a mode dropdown.
 - **Alerts** — the active alerts, styled by severity.
 
 The dashboard loads everything in parallel on `start()` and then keeps the sensor reading up to date over the WebSocket. A reading that arrives over the socket replaces only the sensor in the snapshot; the pumps are kept.
 
-Changing a pump **mode** updates the UI optimistically and rolls back with a snack bar if the `PUT` fails. The **start/stop button is local only** — it toggles a `running` flag in the widget's state and never reaches the API, so it does not actually stop a pump.
+Changing a pump **mode** updates the UI optimistically and rolls back with a snack bar if the `PUT` fails.
 
 #### Watering History (`/watering-history`)
 
@@ -463,7 +463,6 @@ The fixtures take the whole `Uri`, so a test can answer the same path differentl
 - [ ] Move `GreenhouseSnapshot` out of the network layer
 - [ ] Remove the unused `cupertino_icons` dependency
 - [ ] Add a screen for the pump activation parameters (`GET /pump/parameters/`)
-- [ ] Make the start/stop button reach the API — it is local only today
 - [ ] Add a live feed for water usage — only sensor readings are broadcast today
 
 See the [open issues](https://github.com/invalid-code/dbtc-hacktoberfest-2026-g2/issues) for a full list of proposed features (and known issues).

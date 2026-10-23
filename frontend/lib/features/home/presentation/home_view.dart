@@ -106,12 +106,13 @@ class _HomeViewState extends State<HomeView> {
                       const SizedBox(height: 22),
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          final columns = constraints.maxWidth > 850
+                          final wide = constraints.maxWidth > 1050;
+                          final columns = wide
                               ? 3
                               : constraints.maxWidth > 500
                               ? 2
                               : 1;
-                          return Container(
+                          final sensorStatus = Container(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                             decoration: BoxDecoration(
                               color: const Color(0xffccdec3),
@@ -150,12 +151,28 @@ class _HomeViewState extends State<HomeView> {
                               ],
                             ),
                           );
+                          final alerts = AlertsCard(
+                            alerts: _viewModel.alerts,
+                            failed: _viewModel.alertsFailed,
+                          );
+                          return wide
+                              ? Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: sensorStatus),
+                                    const SizedBox(width: 16),
+                                    SizedBox(width: 300, child: alerts),
+                                  ],
+                                )
+                              : Column(
+                                  children: [
+                                    sensorStatus,
+                                    const SizedBox(height: 16),
+                                    alerts,
+                                  ],
+                                );
                         },
-                      ),
-                      const SizedBox(height: 22),
-                      AlertsCard(
-                        alerts: _viewModel.alerts,
-                        failed: _viewModel.alertsFailed,
                       ),
                     ],
                   ),

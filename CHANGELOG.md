@@ -14,11 +14,17 @@ for completeness.
 
 - `SPEC.md`, the normative description of the system's components, contracts,
   behavior, configuration, and acceptance criteria.
+- Microcontroller registration when a socket connects to `/mc-ws/`, which
+  provisions sensors 1-3 and pumps 1-3 if they are missing.
 
 ### Changed
 
 - The dashboard now renders one pump card per pump returned by `GET /pump/`
   instead of hard-coding three cards.
+
+### Removed
+
+- The local-only running status and start/stop button from the pump cards.
 
 ## [42ec0ba] - 2026-10-23 - test: added regression tests to the backend and frontend
 

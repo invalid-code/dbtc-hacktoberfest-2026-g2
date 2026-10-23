@@ -16,6 +16,16 @@ async def get_sensors(db: AsyncSession) -> list[Sensor]:
     return await sensor_repo.get_all_sensors(db)
 
 
+async def ensure_sensors(
+    db: AsyncSession,
+    sensor_ids: tuple[int, ...] = (1, 2, 3),
+) -> None:
+    """Create the sensors of the greenhouse if they are not in the database yet."""
+    for sensor_id in sensor_ids:
+        await sensor_repo.get_or_create_sensor(db, sensor_id)
+    await db.commit()
+
+
 async def get_sensor_data(
     db: AsyncSession,
     *,

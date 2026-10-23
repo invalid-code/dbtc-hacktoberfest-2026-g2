@@ -57,8 +57,10 @@ const int MOISTURE_PIN_2 = 39;
 const int MOISTURE_PIN_3 = 34;
 
 // Raw ADC range of the capacitive soil moisture sensors (0-2800), mapped to 0-100 %.
-const int MOISTURE_LOW_VAL = 0;
-const int MOISTURE_HIGH_VAL = 2800;
+const int MOISTURE4PIN_LOW_VAL = 4000;
+const int MOISTURE4PIN_HIGH_VAL = 1000;
+const int MOISTURE3PIN_LOW_VAL = 0;
+const int MOISTURE3PIN_HIGH_VAL = 2500;
 
 // How long each mode runs the pump, in milliseconds.
 const int FAST_RUN_MS = 750;
@@ -633,7 +635,8 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // The path needs its trailing slash: the API does not redirect WebSocket requests.
-  webSocket.begin(WS_SERVER_URL, WS_SERVER_PORT, WS_PATH);
+  // Render serves wss:// on 443, so the TLS variant is required here.
+  webSocket.beginSSL(WS_SERVER_URL, WS_SERVER_PORT, WS_PATH);
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
 
@@ -696,7 +699,7 @@ void loop() {
     // The pump decision always uses the real readings, even while a garbled
     // reading is being published, so the greenhouse keeps watering itself.
     int moisture1Value = analogRead(MOISTURE_PIN_1);
-    int moisture1Percent = map(moisture1Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
+    int moisture1Percent = map(moisture1Value, MOISTURE3PIN_LOW_VAL, MOISTURE3PIN_HIGH_VAL, 0, 100);
     moisture1Percent = constrain(moisture1Percent, 0, 100);
     Serial.print("Soil moisture 1 raw: ");
     Serial.println(moisture1Value);
@@ -716,7 +719,7 @@ void loop() {
     openPump(1, moisture1Percent, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
-    int moisture2Percent = map(moisture2Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
+    int moisture2Percent = map(moisture2Value, MOISTURE4PIN_LOW_VAL, MOISTURE4PIN_HIGH_VAL, 0, 100);
     moisture2Percent = constrain(moisture2Percent, 0, 100);
     Serial.print("Soil moisture 2 raw: ");
     Serial.println(moisture2Value);
@@ -735,7 +738,7 @@ void loop() {
     openPump(2, moisture2Percent, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
-    int moisture3Percent = map(moisture3Value, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
+    int moisture3Percent = map(moisture3Value, MOISTURE4PIN_LOW_VAL, MOISTURE4PIN_HIGH_VAL, 0, 100);
     moisture3Percent = constrain(moisture3Percent, 0, 100);
     Serial.print("Soil moisture 3 raw: ");
     Serial.println(moisture3Value);

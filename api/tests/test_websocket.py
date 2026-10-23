@@ -10,6 +10,7 @@ from websockets.asyncio.client import connect
 
 from app.main import app
 from app.repositories import sensor_repo
+from app.services import sensor_service
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -27,6 +28,18 @@ async def live_server(clean_db):
 
     server.should_exit = True
     await task
+
+
+async def test_connecting_provisions_the_sensors(live_server, db_session):
+    url = live_server.replace("http://", "ws://") + "/mc-ws/"
+
+    assert await sensor_service.get_sensors(db_session) == []
+
+    async with connect(url):
+        pass
+
+    sensors = await sensor_service.get_sensors(db_session)
+    assert [sensor.id for sensor in sensors] == [1, 2, 3]
 
 
 async def test_a_reading_is_stored_and_broadcast(live_server, db_session):

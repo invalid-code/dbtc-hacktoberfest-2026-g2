@@ -70,6 +70,15 @@ async def db_session(clean_db):
 
 
 @pytest_asyncio.fixture(loop_scope="session")
+async def empty_db_session(clean_db):
+    """A session over a greenhouse with no sensors, pumps or modes."""
+    await _wipe_tables()
+    async with AsyncSessionLocal() as session:
+        yield session
+    await _wipe_tables()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
 async def client(clean_db):
     """An http client talking to the application in process."""
     transport = ASGITransport(app=app)

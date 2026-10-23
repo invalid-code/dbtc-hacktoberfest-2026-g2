@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import SensorDataRequest
-from app.services import sensor_service, websocket_service
+from app.services import device_service, sensor_service, websocket_service
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,12 @@ async def mc_ws(
     db: AsyncSession = Depends(get_db),
 ):
     """Accepts a reading, stores it and sends it on to every connected client."""
+    client = (
+        f"{websocket.client.host}:{websocket.client.port}"
+        if websocket.client
+        else None
+    )
+    await device_service.register_microcontroller(db, client)
     await websocket_service.connect(websocket)
     try:
         while True:
