@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from app.config import settings
-from app.modes import MODE_LITRES, PumpModeName
+from app.modes import PumpModeName
 from app.services.weather_service import Climate, Weather
 
 logger = logging.getLogger(__name__)
@@ -38,16 +38,16 @@ SYSTEM_INSTRUCTION = (
     "- activate: whether the pump may water at all. Say false when the soil "
     "is wet enough, when the weather is cold enough to hurt the plants, or "
     "when there is nothing to be done.\n"
-    "- moisture_threshold: the soil moisture percentage at or below which the "
-    "pump waters. A lower threshold waters sooner. Keep it between 15 and 45.\n"
+    "- moisture_threshold: the target soil moisture percentage. A pump below "
+    "it waters until it reaches it. A lower threshold waters sooner. Keep it "
+    "between 15 and 45.\n"
     "- activation_interval_minutes: the minutes the pump has to wait between "
     "two activations. More water means longer waits. Keep it between 15 and "
     "720.\n"
-    f"- mode: the mode the pump waters in. FAST gives the most water "
-    f"({MODE_LITRES[PumpModeName.FAST.name]} litres per run), SLOW less "
-    f"({MODE_LITRES[PumpModeName.SLOW.name]} litres) and DRIP the least "
-    f"({MODE_LITRES[PumpModeName.DRIP.name]} litres). SPRINKLE is not "
-    "implemented on the device and must never be used.\n"
+    "- mode: how the pump delivers the water while it runs until the soil "
+    "reaches the threshold. FAST is the strongest flow, SLOW is about half, "
+    "DRIP is a pulsed trickle and SPRINKLE is not implemented on the device "
+    "and must never be used.\n"
     "- reason: one short sentence, in plain words, saying why you chose this.\n"
     "\n"
     "Weigh the heat, the rain that is coming, the evaporation, how dry the "

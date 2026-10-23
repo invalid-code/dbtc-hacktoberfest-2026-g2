@@ -223,7 +223,7 @@ async def test_the_parameters_are_listed(client, db_session, monkeypatch):
     assert parameters[0]["active"] is True
     assert parameters[0]["moisture_threshold"] == 30
     assert parameters[0]["activation_interval_minutes"] == 60
-    assert parameters[0]["mode_liters"] > 0
+    assert parameters[0]["mode_liters_per_second"] > 0
     assert parameters[0]["updated_at"]
 
 

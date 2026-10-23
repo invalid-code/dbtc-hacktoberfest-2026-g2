@@ -126,7 +126,7 @@ class PumpParameterResponse(BaseModel):
     moisture_threshold: int
     activation_interval_minutes: int
     mode: int
-    mode_liters: float
+    mode_liters_per_second: float
     reason: str
     updated_at: datetime
 

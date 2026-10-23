@@ -140,14 +140,16 @@ state, stores them, and pushes them on connect and whenever they change.
   atomically; the sensor loop must not read a partially updated parameter set.
 - **DEV-6** A pump MUST activate only when all of the following hold:
   - the pump is `active`,
-  - the real soil moisture is at or below `moisture_threshold`,
+  - the real soil moisture is below `moisture_threshold`,
   - the pump has never activated, the interval is zero, or
     `activation_interval_minutes` has elapsed since the last activation.
 - **DEV-7** Before the API has supplied parameters, a pump MUST behave as
   `active = true`, `moisture_threshold = 30`, and no interval.
-- **DEV-8** An activation MUST run the pump according to its current mode and
-  MUST send a `water_usage` message with the calculated litres over the
-  WebSocket.
+- **DEV-8** An activation MUST run the pump according to its current mode,
+  re-reading the soil every 10 seconds and stopping when it reaches
+  `moisture_threshold`, the API switches the pump off, or 30 seconds pass. It
+  MUST send a `water_usage` message with the litres actually delivered over the
+  WebSocket when the pump stops.
 - **DEV-9** The firmware MUST handle these messages received over the
   WebSocket:
   - `modes`: apply every pump's mode without watering,
@@ -159,8 +161,9 @@ state, stores them, and pushes them on connect and whenever they change.
 - **DEV-11** The firmware MUST implement the Halloween easter egg described in
   section 8.6. Pump decisions MUST always use the real readings, even when a
   garbled reading is published.
-- **DEV-12** The firmware MUST implement the pump-mode behavior and litres per
-  activation defined in section 8.1.
+- **DEV-12** The firmware MUST implement the pump-mode behavior defined in
+  section 8.1 and water until the soil reaches the threshold, up to the safety
+  timeout.
 
 ### 5.2 API (`api/`)
 
@@ -214,8 +217,8 @@ state, stores them, and pushes them on connect and whenever they change.
 - **API-12** `GET /alerts/` MUST evaluate only the latest reading, following
   the rules and precedence in section 8.3.
 - **API-13** `GET /pump/parameters/` MUST return the stored activation
-  parameters of every pump, including `mode_liters`, or an empty list when no
-  parameters exist.
+  parameters of every pump, including `mode_liters_per_second`, or an empty
+  list when no parameters exist.
 - **API-14** The irrigation service MUST run on a timer
   (`WEATHER_POLL_INTERVAL_SECONDS`, default one hour) and:
   1. read the weather and climate from Open-Meteo,
@@ -357,7 +360,7 @@ Representative payloads:
   "moisture_threshold": 28,
   "activation_interval_minutes": 90,
   "mode": 1,
-  "mode_liters": 0.0028,
+  "mode_liters_per_second": 0.003765,
   "reason": "the soil is dry and it stays hot, but rain is coming on Thursday",
   "updated_at": "2026-10-22T19:54:36.123456"
 }
@@ -475,15 +478,18 @@ defaults and for "today", "stale", and "minutes since" calculations.
 
 ### 8.1 Pump modes
 
-| Ordinal | Name | Firmware behavior | Litres per activation |
-|---------|------|-------------------|-----------------------|
-| 0 | `FAST` | Full power for 750 ms | 0.0060 |
-| 1 | `SLOW` | PWM 120/255 for 750 ms | 0.0028 |
-| 2 | `DRIP` | 150 ms on, then 2.5 s off | 0.0012 |
-| 3 | `SPRINKLE` | No-op (not implemented) | 0.0 |
+| Ordinal | Name | Firmware behavior | Average flow |
+|---------|------|-------------------|--------------|
+| 0 | `FAST` | Full power | 0.0080 L/s |
+| 1 | `SLOW` | PWM 120/255 | 0.0038 L/s |
+| 2 | `DRIP` | 150 ms on, then 2.5 s off | 0.00045 L/s |
+| 3 | `SPRINKLE` | No-op (not implemented) | 0.0 L/s |
 
-The firmware flow rate is 0.008 litres per second. The litre values in the API
-(`api/app/modes.py`) mirror the firmware calculation.
+The firmware flow rate is 0.008 litres per second. The average flow values in
+the API (`api/app/modes.py`) mirror the firmware calculation, scaled by the PWM
+duty cycle or the drip on/off ratio. A watering has no fixed duration: it runs
+until the soil reaches the threshold, up to a 30-second safety timeout, and the
+reported usage comes from the time the output was actually on.
 
 ### 8.2 Watering decision
 
@@ -491,11 +497,15 @@ For each zone and cycle:
 
 1. If the API has not provided parameters, use `active = true`,
    `threshold = 30`, and `interval = 0`.
-2. If `active` is false, do not water.
-3. If real soil moisture is greater than the threshold, do not water.
-4. If the pump has activated before, the interval is greater than zero, and the
+2. If a watering is already running, stop it when real soil moisture reaches
+   the threshold.
+3. Otherwise, if `active` is false, do not water.
+4. If real soil moisture is at or above the threshold, do not water.
+5. If the pump has activated before, the interval is greater than zero, and the
    elapsed time is less than the interval, do not water.
-5. Otherwise activate the pump in its current mode and record the used litres.
+6. Otherwise start the pump in its current mode and leave it on until the soil
+   reaches the threshold, the API switches the pump off, or 30 seconds pass.
+   Report the litres actually delivered when the pump stops.
 
 The decision uses real sensor values even when the published reading is
 garbled.

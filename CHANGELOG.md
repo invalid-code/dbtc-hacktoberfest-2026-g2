@@ -27,6 +27,10 @@ for completeness.
   instead of hard-coding three cards.
 - The microcontroller uses only the WebSocket: it no longer runs an HTTP server
   or makes HTTP requests, and the API no longer polls it.
+- A watering now runs until the soil reaches its moisture threshold, with a
+  30-second safety timeout, and reports the litres actually delivered.
+- `mode_liters` is now `mode_liters_per_second` and describes the average flow
+  of a mode instead of the amount of one fixed-length run.
 
 ### Removed
 

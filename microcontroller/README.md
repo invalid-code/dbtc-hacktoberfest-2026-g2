@@ -201,28 +201,31 @@ No pin is used twice: the pumps sit on the digital outputs 25, 26 and 27, the mo
 <!-- THE MAIN LOOP -->
 ### The Main Loop
 
-`loop()` runs continuously and does three things:
+`loop()` runs continuously and does four things:
 
 1. `webSocket.loop()` — keeps the socket alive, pumps its reconnect timer and
    receives the modes and parameters.
-2. Runs a pump when a mode command asked for it.
-3. Every 10 seconds, reads each zone and publishes it.
+2. `servicePumpCycles()` — drives the drip pulses and stops a pump when its
+   safety timeout expires or the API switches it off.
+3. Starts a watering when a mode command asked for it.
+4. Every 10 seconds, reads each zone, publishes it and updates its pump.
 
 Each 10-second cycle, for each of the three zones:
 
 ```cpp
 int moistureValue = analogRead(MOISTURE_PIN_1);
-int moisturePercent = map(moistureValue, MOISTURE_LOW_VAL, MOISTURE_HIGH_VAL, 0, 100);
+int moisturePercent = map(moistureValue, MOISTURE3PIN_LOW_VAL, MOISTURE3PIN_HIGH_VAL, 0, 100);
 moisturePercent = constrain(moisturePercent, 0, 100);
 
 float temp = tempSensor1.readTemperature();
 float humidity = tempSensor1.readHumidity();
 
 publishSensorReading(1, moisturePercent, temp, humidity);
-openPump(1, moisturePercent, temp, humidity, curMode1);
+updatePump(1, moisturePercent, curMode1);
 ```
 
-The loop also reconnects to Wi-Fi if the connection drops.
+The loop retries Wi-Fi every 5 seconds without blocking, so the pumps and the
+sensor cycle keep running while the connection comes back.
 
 `setup()` starts the serial port at 115200, seeds the RNG, syncs the clock from `pool.ntp.org`, connects to Wi-Fi, opens the WebSocket, creates the parameters mutex, initialises the DHT sensors and sets the pin modes.
 
@@ -233,17 +236,26 @@ The loop also reconnects to Wi-Fi if the connection drops.
 <!-- WATERING LOGIC -->
 ### Watering Logic
 
-`openPump()` runs a pump when the soil is dry enough, when the API let it water, and when enough time has passed since the last activation:
+`updatePump()` starts a watering when the soil is dry enough, when the API let
+the pump water, and when enough time has passed since the last activation. The
+pump then stays on until the soil reaches `moisture_threshold`, the API switches
+the pump off, or the 30-second safety timeout expires:
 
 ```cpp
-void openPump(int pumpId, int moisturePercent, int curMode) {
+void updatePump(int pumpId, int moisturePercent, int curMode) {
   ActivationParameters parameters = readParameters(pumpId);
 
-  if (!parameters.active) {
-    Serial.printf("Pump %d does not water, the API switched it off\n", pumpId);
+  if (pumpCycles[pumpId].running) {
+    if (moisturePercent >= parameters.moistureThreshold) {
+      stopPumpCycle(pumpId, "the soil reached the threshold");
+    }
     return;
   }
-  if (moisturePercent > parameters.moistureThreshold) {
+
+  if (curMode == SPRINKLE || !parameters.active) {
+    return;
+  }
+  if (moisturePercent >= parameters.moistureThreshold) {
     return;
   }
   if (hasActivated[pumpId] && parameters.intervalMs > 0 &&
@@ -251,18 +263,20 @@ void openPump(int pumpId, int moisturePercent, int curMode) {
     return;
   }
 
-  hasActivated[pumpId] = true;
-  lastActivationMs[pumpId] = millis();
-  activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
+  startPumpCycle(pumpId, curMode);
 }
 ```
+
+`startPumpCycle()` turns the output on, `servicePumpCycles()` handles the drip
+pulses and timeout, and `stopPumpCycle()` reports the litres actually delivered
+from the time the output was on and the mode's flow.
 
 The parameters come from the API, which asks Gemini what every pump should do with the weather and the state of the greenhouse. They are:
 
 | Field                        | Meaning                                            |
 |-------------------------------|----------------------------------------------------|
 | `active`                     | whether the pump may water at all                  |
-| `moisture_threshold`         | the soil moisture the pump waters at, in percent    |
+| `moisture_threshold`         | the target soil moisture, in percent; the pump waters below it and stops when it reaches it |
 | `activation_interval_minutes`| the minutes the pump waits between two activations  |
 
 The mode is not part of them: it arrives separately as a `mode` command over the socket, and the API sends it when it changes.
@@ -284,14 +298,17 @@ The modes are an enum whose ordinals are the integers stored in the database:
 enum OperatingMode { FAST, SLOW, DRIP, SPRINKLE };
 ```
 
-| Mode | Behaviour | Duration | Litres |
-|------------|------------------------------------|--------|--------|
-| `FAST`     | `digitalWrite(HIGH)`               | 750 ms | 0.0060 |
-| `SLOW`     | `analogWrite(pin, 120)` — 47 % PWM | 750 ms | 0.0028 |
-| `DRIP`     | 150 ms on, then 2.5 s off          | 150 ms | 0.0012 |
-| `SPRINKLE` | Nothing, not implemented           |   —    |  0.0   |
+| Mode | Behaviour | Average flow |
+|------------|------------------------------------|--------------|
+| `FAST`     | `digitalWrite(HIGH)`               | 0.0080 L/s   |
+| `SLOW`     | `analogWrite(pin, 120)` — 47 % PWM | 0.0038 L/s   |
+| `DRIP`     | 150 ms on, then 2.5 s off          | 0.00045 L/s  |
+| `SPRINKLE` | Nothing, not implemented           | 0.0 L/s      |
 
-The litre figures come from `PUMP_LITRES_PER_SECOND = 0.008`, scaled by the run time and, for `SLOW`, by the PWM duty cycle.
+A watering does not have a fixed duration: it runs until the soil reaches the
+threshold, up to the 30-second safety timeout. The flow figures come from
+`PUMP_LITRES_PER_SECOND = 0.008`, scaled by the PWM duty cycle or the drip
+on/off ratio, and the reported usage is the actual time the output was on.
 
 The current mode of each pump is kept in `curMode1`, `curMode2`, `curMode3`. The ordinals are shared with the API and the app — see the [root README](../README.md#shared-contract).
 
@@ -322,13 +339,16 @@ The socket reconnects every 5 seconds. The API broadcasts the stored readings ba
 
 #### Outbound: Water Usage over the WebSocket
 
-After a pump actually runs, `reportWaterUsage()` sends the litres over the socket:
+After a pump stops, `reportWaterUsage()` sends the litres it actually delivered
+over the socket:
 
 ```json
-{ "type": "water_usage", "pump": 1, "liters": 0.0060 }
+{ "type": "water_usage", "pump": 1, "liters": 0.0216 }
 ```
 
-Every pump run happens in the main loop — the sensor cycle or a pending mode command — so the socket callback never blocks on a watering.
+Every pump run happens in the main loop — the sensor cycle or a pending mode
+command — so the socket callback never blocks on a watering. The amount varies
+with how long the soil takes to reach the threshold, up to the safety timeout.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -340,7 +360,7 @@ On connect the API sends the modes it wants every pump to run. They are applied 
 { "type": "modes", "modes": { "1": "FAST", "2": "SLOW", "3": "DRIP" } }
 ```
 
-A mode change from the app arrives as a live command. The mode is stored, the device answers with `mode_applied`, and the watering is scheduled for the main loop:
+A mode change from the app arrives as a live command. The mode is stored, the device answers with `mode_applied`, and a watering is scheduled for the main loop. A live command always starts a watering, even when it names the mode the pump is already in, so the same button gives the plants another drink after the soil has reached the threshold. The modes sent on connect never water.
 
 ```json
 { "type": "mode", "pump": 1, "mode": "DRIP" }

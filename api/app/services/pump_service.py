@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Pump, PumpHistory, PumpMode
-from app.modes import mode_litres, mode_name
+from app.modes import mode_litres_per_second, mode_name
 from app.repositories import parameter_repo, pump_repo
 from app.schemas import PumpHistoryRequest, PumpParameterResponse
 from app.services import websocket_service
@@ -85,7 +85,7 @@ async def get_pump_parameters(db: AsyncSession) -> list[PumpParameterResponse]:
             moisture_threshold=row.moisture_threshold,
             activation_interval_minutes=row.activation_interval_minutes,
             mode=row.mode,
-            mode_liters=mode_litres(row.mode),
+            mode_liters_per_second=mode_litres_per_second(row.mode),
             reason=row.reason,
             updated_at=row.updated_at,
         )

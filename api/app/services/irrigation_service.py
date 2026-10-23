@@ -7,7 +7,7 @@ greenhouse, and writes down what Gemini decides:
 * whether the pump may **activate** at all,
 * the **moisture threshold** it waters at,
 * the **activation interval** it has to wait,
-* the **mode** it waters in, which is how much water one activation gives.
+* the **mode** it waters in, which is how fast it delivers the water.
 
 When there is no api key, or Gemini cannot be reached, the plain rules in
 `compute_parameters` decide instead, so the greenhouse is never left without

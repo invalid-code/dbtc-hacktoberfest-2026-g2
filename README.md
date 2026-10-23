@@ -198,16 +198,22 @@ These shapes are agreed between all three parts. Changing one means changing the
 
 **Pump mode ordinals.** The mode is stored as an integer everywhere, and the integers are the ordinals of the Arduino `OperatingMode` enum:
 
-| Ordinal | Mode       | Behaviour             | Litres per run |
-|---------|------------|-----------------------|----------------|
-|    0    |   `FAST`   | full power for 750 ms |     0.0060     |
-|    1    |   `SLOW`   | 47 % PWM for 750 ms   |     0.0028     |
-|    2    |   `DRIP`   | 150 ms on, 2.5 s off  |     0.0012     |
-|    3    | `SPRINKLE` | not implemented       |       0.0      |
+| Ordinal | Mode       | Behaviour                       | Average flow |
+|---------|------------|---------------------------------|--------------|
+|    0    |   `FAST`   | full power                      |  0.0080 L/s  |
+|    1    |   `SLOW`   | 47 % PWM                        |  0.0038 L/s  |
+|    2    |   `DRIP`   | 150 ms on, 2.5 s off            |  0.00045 L/s |
+|    3    | `SPRINKLE` | not implemented                 |    0.0 L/s   |
 
-`api/app/modes.py`, `microcontroller/microcontroller.ino` and `frontend/lib/model/pump_info.dart` each hold the same ordered list. The device's own HTTP API speaks mode *names* (`"DRIP"`); the conversion happens in `api/app/services/device_service.py`.
+A watering runs until the soil reaches `moisture_threshold`, up to a 30-second
+safety timeout, so the litres depend on how dry the soil is. `api/app/modes.py`,
+`microcontroller/microcontroller.ino` and `frontend/lib/model/pump_info.dart`
+each hold the same ordered list.
 
-**Pump history.** The device posts `{"pump": 1, "liters": 0.0060}`. The API returns `{"id", "liters", "recorded_at", "pump_id"}`.
+**Pump history.** The device sends
+`{"type": "water_usage", "pump": 1, "liters": 0.0216}` over the WebSocket with
+the litres it actually delivered. The API returns `{"id", "liters",
+"recorded_at", "pump_id"}`.
 
 **Alert.** `{"message": "...", "severity": "critical|warning|spooky"}`.
 

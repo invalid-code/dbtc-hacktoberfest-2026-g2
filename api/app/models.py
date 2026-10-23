@@ -90,8 +90,8 @@ class PumpParameter(Base):
     """The activation parameters of a single pump.
 
     Gemini rewrites them: active says whether the pump may water at all, the
-    moisture threshold says when it waters, the interval says how often it
-    may do so, and the mode says how much water one activation gives.
+    moisture threshold is the target it waters up to, the interval says how
+    often it may do so, and the mode says how fast it delivers the water.
     """
 
     __tablename__ = "pump_parameter"

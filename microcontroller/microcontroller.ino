@@ -51,10 +51,13 @@ const int MOISTURE4PIN_HIGH_VAL = 1000;
 const int MOISTURE3PIN_LOW_VAL = 0;
 const int MOISTURE3PIN_HIGH_VAL = 2500;
 
-// How long each mode runs the pump, in milliseconds.
-const int FAST_RUN_MS = 750;
-const int SLOW_RUN_MS = 750;
-const int DRIP_RUN_MS = 150;
+// How long a watering may run before it is stopped even if the soil never
+// reaches the threshold, in milliseconds.
+const unsigned long WATERING_TIMEOUT_MS = 30000;
+
+// Drip mode: a short burst followed by a longer pause, in milliseconds.
+const unsigned long DRIP_ON_MS = 150;
+const unsigned long DRIP_OFF_MS = 2500;
 
 // PWM duty cycle (0-255) used by the slow mode.
 const int SLOW_PWM = 120;
@@ -106,11 +109,25 @@ struct GarbledReading {
   float temperature;
 };
 
-// A mode change that arrived over the socket, run by the main loop so the
+// The watering cycle of one pump. A cycle runs until the soil reaches the
+// threshold, the API switches the pump off, or the safety timeout expires.
+struct PumpCycle {
+  bool running = false;
+  int mode = FAST;
+  unsigned long startedMs = 0;
+  unsigned long toggledMs = 0;
+  unsigned long onStartedMs = 0;
+  unsigned long onMs = 0;
+  bool outputOn = false;
+};
+
+// Indexed by pump id; slot 0 is unused.
+PumpCycle pumpCycles[4] = {};
+
+// Mode changes that arrived over the socket, run by the main loop so the
 // socket callback never blocks on a watering.
-bool pumpActivationPending = false;
-int pendingPumpId = 0;
-int pendingPumpMode = FAST;
+bool pumpActivationPending[4] = {false, false, false, false};
+int pendingPumpMode[4] = {FAST, FAST, FAST, FAST};
 
 // ---- Mode helpers ----------------------------------------------------------
 
@@ -162,20 +179,15 @@ int pumpPinFor(int pumpId) {
   return -1;
 }
 
-// How much water a run in each mode uses, from the flow rate and the timings.
-float modeLitres(int mode) {
-  switch (mode) {
-    case FAST:
-      return PUMP_LITRES_PER_SECOND * (FAST_RUN_MS / 1000.0f);
-    case SLOW:
-      return PUMP_LITRES_PER_SECOND * (SLOW_RUN_MS / 1000.0f) *
-             (SLOW_PWM / 255.0f);
-    case DRIP:
-      return PUMP_LITRES_PER_SECOND * (DRIP_RUN_MS / 1000.0f);
-    case SPRINKLE:
-      return 0.0f;
+// How much water a run used, from the time the output was on and the flow of
+// the mode. The slow mode's PWM scales the flow down; drip already counts only
+// the time the pump was on.
+float pumpLitres(int mode, unsigned long onMs) {
+  float litres = PUMP_LITRES_PER_SECOND * (onMs / 1000.0f);
+  if (mode == SLOW) {
+    litres *= SLOW_PWM / 255.0f;
   }
-  return 0.0f;
+  return litres;
 }
 
 // ---- WebSocket event handling -----------------------------------------------
@@ -204,10 +216,9 @@ bool applyPumpMode(int pumpId, int mode, bool runPump) {
                   modeName(mode));
   }
 
-  if (changed && runPump) {
-    pumpActivationPending = true;
-    pendingPumpId = pumpId;
-    pendingPumpMode = mode;
+  if (runPump) {
+    pumpActivationPending[pumpId] = true;
+    pendingPumpMode[pumpId] = mode;
   }
   return changed;
 }
@@ -348,35 +359,113 @@ void reportWaterUsage(int pumpId, float litres) {
 
 // ---- Pump actuation ---------------------------------------------------------
 
-// Fast mode: full power for FAST_RUN_MS.
-void fast(int pumpPin) {
-  Serial.println("-- Fast Flow Mode --");
-  digitalWrite(pumpPin, HIGH);
-  delay(FAST_RUN_MS);
-  digitalWrite(pumpPin, LOW);
+void stopPumpCycle(int pumpId, const char* reason);
+
+// Drives the output of a pump for the mode of its running cycle.
+void writePumpOutput(int pumpId, bool on) {
+  int pumpPin = pumpPinFor(pumpId);
+  if (pumpPin < 0) {
+    return;
+  }
+
+  if (pumpCycles[pumpId].mode == SLOW) {
+    analogWrite(pumpPin, on ? SLOW_PWM : 0);
+  } else {
+    digitalWrite(pumpPin, on ? HIGH : LOW);
+  }
 }
 
-// Slow mode: reduced power (SLOW_PWM) for SLOW_RUN_MS.
-void slow(int pumpPin) {
-  Serial.println("-- Slow Flow Mode --");
-  analogWrite(pumpPin, SLOW_PWM);
-  delay(SLOW_RUN_MS);
-  analogWrite(pumpPin, 0);
+// Starts a watering cycle and leaves the pump on until the soil reaches the
+// threshold, the API switches it off, or the safety timeout expires.
+bool startPumpCycle(int pumpId, int mode) {
+  if (pumpId < 1 || pumpId > 3) {
+    return false;
+  }
+  if (pumpCycles[pumpId].running) {
+    stopPumpCycle(pumpId, "a new mode was applied");
+  }
+  if (mode == SPRINKLE) {
+    Serial.printf("Pump %d has no SPRINKLE behavior, not watering\n", pumpId);
+    return false;
+  }
+
+  unsigned long now = millis();
+  PumpCycle& cycle = pumpCycles[pumpId];
+  cycle.running = true;
+  cycle.mode = mode;
+  cycle.startedMs = now;
+  cycle.toggledMs = now;
+  cycle.onStartedMs = now;
+  cycle.onMs = 0;
+  cycle.outputOn = true;
+  writePumpOutput(pumpId, true);
+
+  hasActivated[pumpId] = true;
+  lastActivationMs[pumpId] = now;
+  Serial.printf("Pump %d starts watering in %s mode\n", pumpId, modeName(mode));
+  return true;
 }
 
-// Drip mode: a short DRIP_RUN_MS burst followed by a pause.
-void drip(int pumpPin) {
-  Serial.println("-- Drip Flow Mode --");
-  digitalWrite(pumpPin, HIGH);
-  delay(DRIP_RUN_MS);
+// Stops a watering cycle, reports the water that actually flowed and leaves the
+// pump ready for the next interval.
+void stopPumpCycle(int pumpId, const char* reason) {
+  PumpCycle& cycle = pumpCycles[pumpId];
+  if (!cycle.running) {
+    return;
+  }
 
-  digitalWrite(pumpPin, LOW);
-  delay(2500);
+  unsigned long now = millis();
+  if (cycle.outputOn) {
+    cycle.onMs += now - cycle.onStartedMs;
+  }
+  writePumpOutput(pumpId, false);
+
+  cycle.running = false;
+  cycle.outputOn = false;
+
+  float litres = pumpLitres(cycle.mode, cycle.onMs);
+  Serial.printf("Pump %d stops watering (%s), %.4f litres in %lu ms\n", pumpId,
+                reason, litres, cycle.onMs);
+  reportWaterUsage(pumpId, litres);
 }
 
-// Sprinkle mode: not implemented, so the pump never actually runs here.
-void sprinkle(int pumpPin) {
-  Serial.println("-- Sprinkle Flow Mode --");
+// Drives the drip pulses and the stop conditions of every running pump. Called
+// from the main loop, so the socket and the sensor cycle stay responsive.
+void servicePumpCycles() {
+  unsigned long now = millis();
+
+  for (int pumpId = 1; pumpId <= 3; pumpId++) {
+    PumpCycle& cycle = pumpCycles[pumpId];
+    if (!cycle.running) {
+      continue;
+    }
+
+    ActivationParameters parameters = readParameters(pumpId);
+    if (!parameters.active) {
+      stopPumpCycle(pumpId, "the API switched it off");
+      continue;
+    }
+
+    if (now - cycle.startedMs >= WATERING_TIMEOUT_MS) {
+      stopPumpCycle(pumpId, "the safety timeout was reached");
+      continue;
+    }
+
+    if (cycle.mode == DRIP) {
+      unsigned long elapsed = now - cycle.toggledMs;
+      if (cycle.outputOn && elapsed >= DRIP_ON_MS) {
+        cycle.onMs += elapsed;
+        writePumpOutput(pumpId, false);
+        cycle.outputOn = false;
+        cycle.toggledMs = now;
+      } else if (!cycle.outputOn && elapsed >= DRIP_OFF_MS) {
+        cycle.onStartedMs = now;
+        writePumpOutput(pumpId, true);
+        cycle.outputOn = true;
+        cycle.toggledMs = now;
+      }
+    }
+  }
 }
 
 // ---- Sensor publishing ------------------------------------------------------
@@ -466,38 +555,30 @@ void publishSensorReading(int sensor, int moisturePercent, float tempValue, floa
   sendSensorData(sensor, moisturePercent, tempValue, humidityValue, false);
 }
 
-// Runs the pump in the given mode and then reports the water usage.
-void activatePumpMode(int pumpId, int pumpPin, int curMode) {
-  switch (curMode) {
-    case FAST:
-      fast(pumpPin);
-      break;
-    case SLOW:
-      slow(pumpPin);
-      break;
-    case DRIP:
-      drip(pumpPin);
-      break;
-    case SPRINKLE:
-      sprinkle(pumpPin);
-      break;
-  }
-  reportWaterUsage(pumpId, modeLitres(curMode));
-}
-
-// Runs the pump when the soil moisture is at or below the threshold the API
-// decided, when the API let the pump water at all, and when enough time has
-// passed since the last activation. Before the API has answered the pump
-// waters at 30 % without a wait, the way it always did.
-void openPump(int pumpId, int moisturePercent, int curMode) {
+// Keeps a running pump watering until the soil reaches the threshold, or
+// starts one when the soil is dry enough, the API let the pump water, and
+// enough time has passed since the last activation. Before the API has
+// answered the pump waters at 30 % without a wait, the way it always did.
+void updatePump(int pumpId, int moisturePercent, int curMode) {
   ActivationParameters parameters = readParameters(pumpId);
+
+  if (pumpCycles[pumpId].running) {
+    if (moisturePercent >= parameters.moistureThreshold) {
+      stopPumpCycle(pumpId, "the soil reached the threshold");
+    }
+    return;
+  }
+
+  if (curMode == SPRINKLE) {
+    return;
+  }
 
   if (!parameters.active) {
     Serial.printf("Pump %d does not water, the API switched it off\n", pumpId);
     return;
   }
 
-  if (moisturePercent > parameters.moistureThreshold) {
+  if (moisturePercent >= parameters.moistureThreshold) {
     return;
   }
 
@@ -506,9 +587,7 @@ void openPump(int pumpId, int moisturePercent, int curMode) {
     return;
   }
 
-  hasActivated[pumpId] = true;
-  lastActivationMs[pumpId] = millis();
-  activatePumpMode(pumpId, pumpPinFor(pumpId), curMode);
+  startPumpCycle(pumpId, curMode);
 }
 
 // ---- Setup and the main loop ------------------------------------------------
@@ -557,28 +636,31 @@ void setup() {
   Serial.println("ESP32 Watering System Initialized");
 }
 
-// Services the socket, and every 10 seconds reads each zone, publishes the
-// reading and checks whether to water.
+// Services the socket, drives the running pumps, and every 10 seconds reads
+// each zone, publishes the reading and decides whether to water.
 void loop() {
   webSocket.loop();
 
-  // A mode change that arrived over the socket runs the pump here, outside the
-  // socket callback.
-  if (pumpActivationPending) {
-    pumpActivationPending = false;
-    hasActivated[pendingPumpId] = true;
-    lastActivationMs[pendingPumpId] = millis();
-    activatePumpMode(pendingPumpId, pumpPinFor(pendingPumpId), pendingPumpMode);
+  // The pumps are driven here instead of in the socket callback, so the
+  // watering keeps going while the socket is busy.
+  servicePumpCycles();
+
+  // A mode change that arrived over the socket starts a watering here, outside
+  // the socket callback.
+  for (int pumpId = 1; pumpId <= 3; pumpId++) {
+    if (pumpActivationPending[pumpId]) {
+      pumpActivationPending[pumpId] = false;
+      startPumpCycle(pumpId, pendingPumpMode[pumpId]);
+    }
   }
 
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Wi-Fi disconnected. Reconnecting...");
-    WiFi.begin(SSID, PASSWORD);
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
+    static unsigned long lastWifiAttempt = 0;
+    if (millis() - lastWifiAttempt >= 5000) {
+      lastWifiAttempt = millis();
+      Serial.println("Wi-Fi disconnected. Reconnecting...");
+      WiFi.begin(SSID, PASSWORD);
     }
-    Serial.println("\nWi-Fi reconnected!");
   }
 
   static unsigned long lastSent = 0;
@@ -605,7 +687,7 @@ void loop() {
     Serial.println(humiditySensor1Value);
 
     publishSensorReading(1, moisture1Percent, tempSensor1Value, humiditySensor1Value);
-    openPump(1, moisture1Percent, curMode1);
+    updatePump(1, moisture1Percent, curMode1);
 
     int moisture2Value = analogRead(MOISTURE_PIN_2);
     int moisture2Percent = map(moisture2Value, MOISTURE4PIN_LOW_VAL, MOISTURE4PIN_HIGH_VAL, 0, 100);
@@ -624,7 +706,7 @@ void loop() {
     Serial.println(humiditySensor2Value);
 
     publishSensorReading(2, moisture2Percent, tempSensor2Value, humiditySensor2Value);
-    openPump(2, moisture2Percent, curMode2);
+    updatePump(2, moisture2Percent, curMode2);
 
     int moisture3Value = analogRead(MOISTURE_PIN_3);
     int moisture3Percent = map(moisture3Value, MOISTURE4PIN_LOW_VAL, MOISTURE4PIN_HIGH_VAL, 0, 100);
@@ -643,6 +725,6 @@ void loop() {
     Serial.println(humiditySensor3Value);
 
     publishSensorReading(3, moisture3Percent, tempSensor3Value, humiditySensor3Value);
-    openPump(3, moisture3Percent, curMode3);
+    updatePump(3, moisture3Percent, curMode3);
   }
 }

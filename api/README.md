@@ -533,7 +533,7 @@ Gemini decides, the code checks: the answer is clamped into the limits and the m
     "moisture_threshold": 28,
     "activation_interval_minutes": 90,
     "mode": 1,
-    "mode_liters": 0.0028,
+    "mode_liters_per_second": 0.003765,
     "reason": "the soil is dry and it stays hot, but rain is coming on Thursday",
     "updated_at": "2026-10-22T19:54:36.123456"
   }
@@ -542,7 +542,7 @@ Gemini decides, the code checks: the answer is clamped into the limits and the m
 
 The parameters are only written when they really change, so the logs show what the weather did to the greenhouse. A source that cannot be read is logged and the old parameters stay in place.
 
-The microcontroller runs the pump in the mode it was told to, so the mode says how much water one activation gives. The litres of each mode are mirrored from the firmware in `app/modes.py`.
+The microcontroller runs the pump in the mode it was told to until the soil reaches the threshold, so the mode says how fast water is delivered, not how much one activation gives. The average flow of each mode is mirrored from the firmware in `app/modes.py`.
 
 The other three fields reach the device as well: the API pushes them over the WebSocket on connect and whenever they change, and the sketch waters by the threshold, the interval and the flag it decided. See the [microcontroller doc](../microcontroller/README.md#watering-logic).
 
