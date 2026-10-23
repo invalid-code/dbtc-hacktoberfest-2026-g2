@@ -20,9 +20,12 @@ const shortMonthNames = [
 String pumpLabel(PumpHistoryEntry entry) =>
     entry.pump == null ? 'Pump' : 'Pump #${entry.pump}';
 
-/// A number without the decimals when it is whole.
+/// A number with at most two decimals, without the decimals when it is whole.
 String formatNumber(double value) {
-  final num number = value == value.roundToDouble() ? value.toInt() : value;
+  final rounded = double.parse(value.toStringAsFixed(2));
+  final num number = rounded == rounded.roundToDouble()
+      ? rounded.toInt()
+      : rounded;
   return '$number';
 }
 
