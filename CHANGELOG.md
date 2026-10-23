@@ -15,6 +15,11 @@ for completeness.
 - `SPEC.md`, the normative description of the system's components, contracts,
   behavior, configuration, and acceptance criteria.
 
+### Changed
+
+- The dashboard now renders one pump card per pump returned by `GET /pump/`
+  instead of hard-coding three cards.
+
 ## [42ec0ba] - 2026-10-23 - test: added regression tests to the backend and frontend
 
 ### Added

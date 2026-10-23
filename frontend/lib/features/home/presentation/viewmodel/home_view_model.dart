@@ -45,15 +45,8 @@ class HomeViewModel extends ChangeNotifier {
     return buckets.map((bucket) => bucket.value).reduce((a, b) => a > b ? a : b);
   }
 
-  int pumpIdFor(int index) =>
-      snapshot != null && snapshot!.pumps.length > index
-          ? snapshot!.pumps[index].id
-          : index + 1;
-
-  int? pumpModeFor(int index) =>
-      snapshot != null && snapshot!.pumps.length > index
-          ? snapshot!.pumps[index].mode
-          : null;
+  /// The pumps the API returned, an empty list until the snapshot loads.
+  List<PumpInfo> get pumps => snapshot?.pumps ?? const [];
 
   /// Loads everything in parallel and then connects the live feed.
   void start() {

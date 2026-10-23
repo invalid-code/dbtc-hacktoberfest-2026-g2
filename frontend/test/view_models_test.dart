@@ -133,7 +133,7 @@ void main() {
 
       expect(calls, contains('PUT /pump/mode/'));
       expect(viewModel.snapshot?.pumps.first.mode, 3);
-      expect(viewModel.pumpModeFor(0), 3);
+      expect(viewModel.pumps.first.mode, 3);
 
       viewModel.dispose();
     });

@@ -255,7 +255,8 @@ and the device fetches them every minute.
 - **UI-4** The dashboard MUST load the latest reading, pumps, pump modes,
   today's usage, alerts, and watering history, and MUST update the latest
   reading from the live feed. It MUST show a conditions card, a water-usage
-  chart, a history summary, three pump cards, and the alerts card.
+  chart, a history summary, a pump card per pump returned by `GET /pump/`, and
+  the alerts card.
 - **UI-5** A pump-mode change MUST call `PUT /pump/mode/` and, on success,
   update the local pump state. The labels MUST be `Fast`, `Slow`, `Drip`, and
   `Sprinkle`, in ordinal order; unknown modes MUST display `Fast`.

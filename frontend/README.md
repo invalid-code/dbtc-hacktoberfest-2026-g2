@@ -452,7 +452,7 @@ The fixtures take the whole `Uri`, so a test can answer the same path differentl
 - [x] Live sensor readings over the WebSocket
 - [x] Time range filters on every chart
 - [x] Shared panels, charts and formatters
-- [ ] Drive the dashboard pump cards from `GET /pump/` instead of hard-coding three cards
+- [x] Drive the dashboard pump cards from `GET /pump/` instead of hard-coding three cards
 - [ ] Fix the layering inversion where `core` imports `features`
 - [ ] Keep the shared models in one place (`lib/model/` and the feature `data/` folders)
 - [ ] Move `GreenhouseSnapshot` out of the network layer

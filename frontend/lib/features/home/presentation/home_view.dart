@@ -128,8 +128,6 @@ class _HomeViewState extends State<HomeView> {
                                   ),
                                 ),
                                 const SizedBox(height: 14),
-                                // The three pumps are hard coded, the pumps the
-                                // API returns do not drive this list.
                                 GridView.count(
                                   crossAxisCount: columns,
                                   shrinkWrap: true,
@@ -138,24 +136,15 @@ class _HomeViewState extends State<HomeView> {
                                   mainAxisSpacing: 14,
                                   childAspectRatio: 1.1,
                                   children: [
-                                    PumpCard(
-                                      name: 'Water Pump #1',
-                                      pumpId: _viewModel.pumpIdFor(0),
-                                      initialMode: _viewModel.pumpModeFor(0),
-                                      onModeChanged: _viewModel.updatePumpMode,
-                                    ),
-                                    PumpCard(
-                                      name: 'Water Pump #2',
-                                      pumpId: _viewModel.pumpIdFor(1),
-                                      initialMode: _viewModel.pumpModeFor(1),
-                                      onModeChanged: _viewModel.updatePumpMode,
-                                    ),
-                                    PumpCard(
-                                      name: 'Water Pump #3',
-                                      pumpId: _viewModel.pumpIdFor(2),
-                                      initialMode: _viewModel.pumpModeFor(2),
-                                      onModeChanged: _viewModel.updatePumpMode,
-                                    ),
+                                    for (final pump in _viewModel.pumps)
+                                      PumpCard(
+                                        key: ValueKey(pump.id),
+                                        name: 'Water Pump #${pump.id}',
+                                        pumpId: pump.id,
+                                        initialMode: pump.mode,
+                                        onModeChanged:
+                                            _viewModel.updatePumpMode,
+                                      ),
                                   ],
                                 ),
                               ],

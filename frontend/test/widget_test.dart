@@ -44,6 +44,36 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('the pump cards follow the pumps the API returns', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    http.Response handler(Uri uri) {
+      if (uri.path == '/pump/') {
+        return http.Response('[{"id":2},{"id":7}]', 200);
+      }
+      if (uri.path == '/pump/mode/') {
+        return http.Response(
+          '[{"id":5,"mode":2,"observed_mode":null,"last_seen_at":null,'
+          '"pump_id":2}]',
+          200,
+        );
+      }
+      return responseFor(uri);
+    }
+
+    await tester.pumpWidget(_app(handler));
+    await _pump(tester);
+
+    expect(find.text('Water Pump #1'), findsNothing);
+    expect(find.text('Water Pump #2'), findsOneWidget);
+    expect(find.text('Water Pump #7'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('the app navigates to the watering history', (
     WidgetTester tester,
   ) async {

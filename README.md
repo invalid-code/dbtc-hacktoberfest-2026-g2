@@ -467,7 +467,7 @@ flutter test
 - [ ] Add authentication — every REST endpoint and the WebSocket are open; a JWT login system existed once and was removed
 - [x] Paginate and filter `GET /sensor/data/` — pages of readings or readings averaged per time unit
 - [ ] Show the pump activation parameters in the app — the API exposes them at `GET /pump/parameters/`
-- [ ] Drive the dashboard pump cards from `GET /pump/` instead of hard-coding three cards
+- [x] Drive the dashboard pump cards from `GET /pump/` instead of hard-coding three cards
 - [ ] Read `observed_mode` and `last_seen_at` in the frontend
 
 See the [open issues](https://github.com/invalid-code/dbtc-hacktoberfest-2026-g2/issues) for a full list of proposed features (and known issues).
