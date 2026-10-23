@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.modes import mode_name
 from app.schemas import (
     PumpHistoryRequest,
     PumpHistoryResponse,
@@ -13,7 +14,7 @@ from app.schemas import (
     PumpResponse,
     TodayUsageResponse,
 )
-from app.services import pump_service
+from app.services import pump_service, websocket_service
 
 router = APIRouter(prefix="/pump", tags=["pump"])
 
@@ -35,8 +36,12 @@ async def update_pump_mode(
     body: PumpModeRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Set the desired mode of a pump; the device is reconciled separately by the poller."""
-    return await pump_service.update_pump_mode(db, body.pump, body.pump_mode)
+    """Set the desired mode of a pump and tell the device over the live channel."""
+    pump_mode = await pump_service.update_pump_mode(db, body.pump, body.pump_mode)
+    await websocket_service.broadcast_pump_mode(
+        pump_mode.pump_id, mode_name(pump_mode.mode)
+    )
+    return pump_mode
 
 
 @router.get("/history/", response_model=list[PumpHistoryResponse])

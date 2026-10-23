@@ -372,6 +372,8 @@ The ESP32 runs a `WebServer` on port 80 with three handlers:
 
 `POST /mode` also accepts form arguments instead of a JSON body. It answers `400` with `{"error":"pump and mode are required"}` when the pump or the mode is missing, and `404` with `{"error":"unknown pump"}` for a pump that is not 1, 2 or 3.
 
+The API can send the same switch over the WebSocket instead: `{"pump": 1, "mode": "DRIP"}` is read in `webSocketEvent()`, the mode is stored and the pump runs in it right away. That works when the ESP32 is behind a NAT and the API cannot reach its HTTP server.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -386,6 +388,8 @@ DEVICE_URL=http://192.168.1.50
 ```
 
 The API then polls `GET {DEVICE_URL}/mode` every `DEVICE_POLL_INTERVAL_SECONDS` (5 by default), records what the device reports in `pump_mode.observed_mode`, and pushes the desired mode with `POST {DEVICE_URL}/mode` whenever the two disagree. The ESP32 must be reachable from wherever the API runs.
+
+That is only needed for reconciliation: a mode changed from the app is also sent over the WebSocket at once, so the pump starts immediately even when `DEVICE_URL` is not set, as long as the ESP32 keeps its `/mc-ws/` connection open.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

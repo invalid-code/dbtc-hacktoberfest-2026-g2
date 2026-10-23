@@ -409,6 +409,8 @@ The handler in `routers/websocket_router.py` validates the payload against `Sens
 
 A malformed payload raises a Pydantic `ValidationError` that is not caught, so it closes the connection.
 
+The API also sends commands down the same channel. `PUT /pump/mode/` broadcasts `{"pump": 1, "mode": "DRIP"}`, which the ESP32 applies and runs right away; the app ignores any message without a `moisture_level`. This path works even when `DEVICE_URL` is empty or the device is not reachable over HTTP, because the device keeps the WebSocket open itself.
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 

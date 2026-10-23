@@ -3,6 +3,7 @@
 import asyncio
 import json
 
+import httpx
 import pytest
 import pytest_asyncio
 import uvicorn
@@ -92,6 +93,22 @@ async def test_a_garbled_reading_is_flagged_in_the_broadcast(live_server, db_ses
     stored = await sensor_repo.get_latest_sensor_data(db_session)
     assert stored is not None
     assert stored.garbled is True
+
+
+async def test_a_pump_mode_change_is_pushed_over_the_socket(live_server):
+    url = live_server.replace("http://", "ws://") + "/mc-ws/"
+
+    async with connect(url) as websocket:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(
+                f"{live_server}/pump/mode/",
+                json={"pump": 2, "pump_mode": 2},
+            )
+        assert response.status_code == 200
+
+        command = json.loads(await asyncio.wait_for(websocket.recv(), timeout=5))
+
+    assert command == {"pump": 2, "mode": "DRIP"}
 
 
 async def test_an_invalid_reading_is_rejected(live_server):

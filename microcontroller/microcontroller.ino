@@ -208,9 +208,36 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
       Serial.printf("Connected to url: %s\n", payload);
       break;
 
-    case WStype_TEXT:
-      Serial.printf("Received: %s\n", payload);
+    case WStype_TEXT: {
+      JsonDocument doc;
+      if (deserializeJson(doc, payload, length)) {
+        Serial.printf("Received: %s\n", payload);
+        break;
+      }
+
+      int pumpId = doc["pump"] | 0;
+      const char* requestedMode = doc["mode"] | "";
+      if (pumpId < 1 || pumpId > 3 || requestedMode[0] == '\0') {
+        Serial.printf("Received: %s\n", payload);
+        break;
+      }
+
+      int mode = modeFromName(String(requestedMode));
+      int* slot = modeSlotFor(pumpId);
+      if (slot == nullptr || *slot == mode) {
+        break;
+      }
+
+      *slot = mode;
+      Serial.printf("Pump %d switched to %s over the socket\n", pumpId,
+                    modeName(mode));
+
+      // Demonstration: run the pump right away in the newly chosen mode.
+      hasActivated[pumpId] = true;
+      lastActivationMs[pumpId] = millis();
+      activatePumpMode(pumpId, pumpPinFor(pumpId), mode);
       break;
+    }
 
     case WStype_BIN:
     case WStype_ERROR:
@@ -368,12 +395,21 @@ void handlePostMode() {
     return;
   }
 
+  bool modeChanged = (*slot != mode);
   *slot = mode;
   Serial.printf("Pump %d switched to %s\n", pumpId, modeName(mode));
 
   String json = "{\"pump\":" + String(pumpId) + ",\"mode\":\"" +
                 String(modeName(mode)) + "\"}";
   deviceServer.send(200, "application/json", json);
+
+  // Demonstration: run the pump right away in the newly chosen mode instead of
+  // waiting for the soil to dry out.
+  if (modeChanged) {
+    hasActivated[pumpId] = true;
+    lastActivationMs[pumpId] = millis();
+    activatePumpMode(pumpId, pumpPinFor(pumpId), mode);
+  }
 }
 
 // Shows the activation parameters the device is working with.

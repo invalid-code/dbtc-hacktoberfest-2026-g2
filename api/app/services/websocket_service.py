@@ -39,6 +39,26 @@ async def broadcast_sensor_data(sensor_data: SensorData) -> None:
     )
 
 
+async def broadcast_pump_mode(pump_id: int, mode: str) -> None:
+    """Tell the connected sockets that a pump switched mode.
+
+    The microcontroller acts on it right away, so a mode change in the app does
+    not have to wait for the next device poll (and works when the API cannot
+    reach the device over HTTP at all).
+    """
+    disconnected: list[WebSocket] = []
+    for client in active_websockets:
+        try:
+            await client.send_json({"pump": pump_id, "mode": mode})
+        except Exception:
+            logger.warning(
+                "a client could not receive the pump mode, dropping it",
+                exc_info=True,
+            )
+            disconnected.append(client)
+    active_websockets.difference_update(disconnected)
+
+
 async def connect(websocket: WebSocket) -> None:
     await websocket.accept()
     active_websockets.add(websocket)
