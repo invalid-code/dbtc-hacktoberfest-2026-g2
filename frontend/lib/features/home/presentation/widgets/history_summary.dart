@@ -15,19 +15,26 @@ class HistorySummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return Panel(
       title: 'History Summary',
-      child: failed
-          ? const Text(
-              'Could not load history',
-              style: TextStyle(color: Colors.black54),
-            )
-          : history == null
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: CircularProgressIndicator(),
-              ),
-            )
-          : _summary(history!),
+      child: SizedBox(
+        height: panelContentHeight,
+        child: failed
+            ? const Center(
+                child: Text(
+                  'Could not load history',
+                  style: TextStyle(color: Colors.black54),
+                ),
+              )
+            : history == null
+            ? const Center(child: CircularProgressIndicator())
+            : history!.isEmpty
+            ? const Center(
+                child: Text(
+                  'No water usage recorded yet',
+                  style: TextStyle(color: Colors.black54),
+                ),
+              )
+            : SingleChildScrollView(child: _summary(history!)),
+      ),
     );
   }
 
@@ -44,18 +51,6 @@ class HistorySummary extends StatelessWidget {
 
     final todayEntries = entries.where((e) => onDay(e, today)).toList();
     final yesterdayEntries = entries.where((e) => onDay(e, yesterday)).toList();
-
-    if (entries.isEmpty) {
-      return const SizedBox(
-        height: panelContentHeight,
-        child: Center(
-          child: Text(
-            'No water usage recorded yet',
-            style: TextStyle(color: Colors.black54),
-          ),
-        ),
-      );
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -171,6 +171,46 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('the history summary matches the usage chart height', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final recordedAt = DateTime.now().toIso8601String();
+    http.Response handler(Uri uri) {
+      if (uri.path == '/pump/history/') {
+        final entries = [
+          for (var i = 0; i < 40; i++)
+            '{"id":$i,"liters":0.5,"recorded_at":"$recordedAt","pump_id":1}',
+        ];
+        return http.Response('[${entries.join(',')}]', 200);
+      }
+      return responseFor(uri);
+    }
+
+    await tester.pumpWidget(_app(handler));
+    await _pump(tester);
+
+    final historyPanel = find
+        .ancestor(
+          of: find.text('History Summary'),
+          matching: find.byType(Panel),
+        )
+        .first;
+
+    expect(
+      _panelHeight(tester, 'History Summary'),
+      _panelHeight(tester, 'Water Usage History'),
+    );
+    expect(
+      find.descendant(of: historyPanel, matching: find.byType(Scrollable)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('flags garbled readings and shows the spooky alert', (
     WidgetTester tester,
   ) async {
