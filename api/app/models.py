@@ -62,8 +62,8 @@ class PumpMode(Base):
     __tablename__ = "pump_mode"
 
     id = Column(Integer, primary_key=True, index=True)
-    # mode is the desired mode, observed_mode is what the device last reported
-    # and is written by the device poller
+    # mode is the desired mode, observed_mode is what the device last confirmed
+    # over the socket
     mode = Column(Integer, nullable=False)
     observed_mode = Column(Integer, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)

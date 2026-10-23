@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Pump, PumpHistory, PumpMode
-from app.modes import MODE_INDEX, PumpModeName, mode_index_from_name
+from app.modes import MODE_INDEX, PumpModeName
 
 
 async def get_all_pumps(db: AsyncSession) -> list[Pump]:
@@ -73,7 +73,7 @@ async def record_observed_mode(
     pump_id: int,
     observed_mode: int,
 ) -> PumpMode | None:
-    """Store the mode the device last reported and when it was seen, ignoring unknown pumps."""
+    """Store the mode the device last confirmed and when, ignoring unknown pumps."""
     db_pump_mode = await get_pump_mode_by_pump_id(db, pump_id)
     if db_pump_mode is None:
         return None
@@ -82,17 +82,6 @@ async def record_observed_mode(
     await db.commit()
     await db.refresh(db_pump_mode)
     return db_pump_mode
-
-
-async def record_observed_modes(
-    db: AsyncSession,
-    observed: dict[int, str],
-) -> None:
-    for pump_id, name in observed.items():
-        index = mode_index_from_name(name)
-        if index is None:
-            continue
-        await record_observed_mode(db, pump_id=pump_id, observed_mode=index)
 
 
 async def get_pump_history(db: AsyncSession) -> list[PumpHistory]:

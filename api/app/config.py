@@ -8,15 +8,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Every field is an environment variable of the same name.
 
-    FRONTEND_URL is the CORS allow-list, an empty DEVICE_URL disables device
-    polling, and WEATHER_ENABLED turns the automatic pump adjustment off.
-    An empty GEMINI_API_KEY leaves the rules in charge of the pumps instead
-    of Gemini.
+    FRONTEND_URL is the CORS allow-list and WEATHER_ENABLED turns the automatic
+    pump adjustment off. An empty GEMINI_API_KEY leaves the rules in charge of
+    the pumps instead of Gemini.
     """
     DB_CONN_STR: str
     FRONTEND_URL: str = "*"
-    DEVICE_URL: str = ""
-    DEVICE_POLL_INTERVAL_SECONDS: float = 5.0
     WEATHER_ENABLED: bool = True
     WEATHER_LATITUDE: float = 14.5995
     WEATHER_LONGITUDE: float = 120.9842

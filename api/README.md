@@ -74,7 +74,7 @@
         <li><a href="#pump-history">Pump History</a></li>
         <li><a href="#alerts">Alerts</a></li>
         <li><a href="#websocket">WebSocket</a></li>
-        <li><a href="#pump-mode-polling">Pump-Mode Polling</a></li>
+        <li><a href="#pump-commands">Pump Commands</a></li>
         <li><a href="#the-weather-service">The Weather Service</a></li>
         <li><a href="#migrations">Migrations</a></li>
         <li><a href="#logging">Logging</a></li>
@@ -123,7 +123,7 @@ Part of [Greenhouse IoT](../README.md). The other components are the [Flutter fr
 | Database           | PostgreSQL via `asyncpg` (`psycopg2` for Alembic)          |
 | Migrations         | Alembic                                                    |
 | WebSockets         | `websockets` via uvicorn                                   |
-| HTTP client        | `httpx` (device polling, weather, gemini)                  |
+| HTTP client        | `httpx` (weather and gemini)                               |
 | Weather source     | Open-Meteo, `api.open-meteo.com` (no api key)              |
 | AI                 | Google Gemini, `generativelanguage.googleapis.com`         |
 | Tests              | pytest + pytest-asyncio + aiosqlite                        |
@@ -145,7 +145,7 @@ routers/  ──▶  services/  ──▶  repositories/  ──▶  models.py
 ```
 
 - **routers/** declare the HTTP surface. They parse the request with a Pydantic schema, call one service function, and return. No logic, no SQL.
-- **services/** hold the behaviour: alert thresholds, device polling, the weather driven pump adjustment with Gemini, and the pump-mode reconciliation.
+- **services/** hold the behaviour: alert thresholds, the WebSocket channel, the weather driven pump adjustment with Gemini, and the pump-mode commands.
 - **repositories/** are the only place that touches the database.
 - **schemas.py** holds the Pydantic request and response models.
 - **models.py** holds the SQLAlchemy models.
@@ -224,8 +224,6 @@ Interactive API docs: <http://localhost:8000/docs>. Health check: `GET /health` 
 |--------------------------------|--------------------|------------------------------------------------------------------------|
 | `DB_CONN_STR`                  | *required*         | SQLAlchemy async URL, e.g. `postgresql+asyncpg://user:pass@host/db`    |
 | `FRONTEND_URL`                 | `*`                | Comma-separated CORS origin allow-list                                 |
-| `DEVICE_URL`                   | `""`               | Base URL of the ESP32's HTTP server. Empty disables device polling     |
-| `DEVICE_POLL_INTERVAL_SECONDS` | `5.0`              | How often the API polls the device for pump modes                      |
 | `WEATHER_ENABLED`              | `true`             | Turns the automatic pump adjustment on                                 |
 | `WEATHER_LATITUDE`             | `14.5995`          | Latitude of the greenhouse, the place the weather is asked for         |
 | `WEATHER_LONGITUDE`            | `120.9842`         | Longitude of the greenhouse                                            |
@@ -260,11 +258,11 @@ Interactive API docs: <http://localhost:8000/docs>. Health check: `GET /health` 
 | GET    | `/pump/mode/`       | `pump_router.py`      | List the desired and observed pump modes          |
 | PUT    | `/pump/mode/`       | `pump_router.py`      | Set the desired mode of a pump                    |
 | GET    | `/pump/history/`    | `pump_router.py`      | Watering history, newest first                    |
-| POST   | `/pump/history/`    | `pump_router.py`      | Record water usage (called by the device)         |
+| POST   | `/pump/history/`    | `pump_router.py`      | Record water usage (`POST` is mirrored over the socket) |
 | GET    | `/pump/usage/today` | `pump_router.py`      | Litres used since local midnight                  |
 | GET    | `/pump/parameters/` | `pump_router.py`      | The activation parameters the weather service set |
 | GET    | `/alerts/`          | `alert_router.py`     | Alerts evaluated against the latest reading       |
-| WS     | `/mc-ws/`           | `websocket_router.py` | Device publishes readings, everyone receives them |
+| WS     | `/mc-ws/`           | `websocket_router.py` | Readings and usage up, modes and parameters down  |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -339,8 +337,8 @@ Note the name change: the device's `sensor` field is `sensor_id` in REST respons
 ```
 
 - `mode` is the **desired** mode, set by the app.
-- `observed_mode` is the mode the device last reported, written by the poller.
-- `last_seen_at` is when the device was last polled successfully.
+- `observed_mode` is the mode the device last confirmed over the socket.
+- `last_seen_at` is when the device last confirmed a mode.
 
 `PUT /pump/mode/` takes `{"pump": 1, "pump_mode": 2}`. Both fields are required; a missing one is a 422. The pump is created on demand if it does not exist yet. The mode is an ordinal — see the table in the [root README](../README.md#shared-contract).
 
@@ -389,11 +387,13 @@ A garbled reading short-circuits everything else: the thresholds would be judgin
 <!-- WEBSOCKET -->
 ### WebSocket
 
-`/mc-ws/` is the live channel. The ESP32 connects to it and publishes readings; the API stores each one and broadcasts it to every socket on the channel, including the app.
+`/mc-ws/` is the live channel and the only way the API talks to the ESP32. There is no device HTTP server and no polling: the device keeps the socket open, so it works behind a NAT and wherever the API runs.
 
-When a socket connects, the API registers the microcontroller and provisions the greenhouse: sensors `1`, `2`, `3` and pumps `1`, `2`, `3` are created if they are missing, and every pump gets a FAST mode row.
+When a socket connects, the API registers the microcontroller and provisions the greenhouse: sensors `1`, `2`, `3` and pumps `1`, `2`, `3` are created if they are missing, and every pump gets a FAST mode row. It then sends the desired modes and the current activation parameters down the new socket.
 
-Published payload:
+**Device → API**
+
+A sensor reading:
 
 ```json
 {
@@ -405,29 +405,59 @@ Published payload:
 }
 ```
 
-The handler in `routers/websocket_router.py` validates the payload against `SensorDataRequest`, saves it, and broadcasts it. The broadcast payload (`services/websocket_service.py`) is the stored row plus an ISO-8601 `recorded_at`; it keeps the key name `sensor`.
+A watering, after a pump ran:
 
-A malformed payload raises a Pydantic `ValidationError` that is not caught, so it closes the connection.
+```json
+{ "type": "water_usage", "pump": 1, "liters": 0.006 }
+```
 
-The API also sends commands down the same channel. `PUT /pump/mode/` broadcasts `{"pump": 1, "mode": "DRIP"}`, which the ESP32 applies and runs right away; the app ignores any message without a `moisture_level`. This path works even when `DEVICE_URL` is empty or the device is not reachable over HTTP, because the device keeps the WebSocket open itself.
+The mode it applied:
+
+```json
+{ "type": "mode_applied", "pump": 1, "mode": "DRIP" }
+```
+
+The handler in `routers/websocket_router.py` validates each message, stores readings and usage, and records the observed mode and `last_seen_at`. The reading broadcast (`services/websocket_service.py`) is the stored row plus an ISO-8601 `recorded_at`; it keeps the key name `sensor`.
+
+**API → device**
+
+On connect, the modes and parameters the device should run:
+
+```json
+{ "type": "modes", "modes": { "1": "FAST", "2": "FAST", "3": "FAST" } }
+```
+
+```json
+{
+  "type": "parameters",
+  "parameters": [
+    { "pump_id": 1, "active": true, "moisture_threshold": 30, "activation_interval_minutes": 60 }
+  ]
+}
+```
+
+When a mode changes, a live command that also runs the pump:
+
+```json
+{ "type": "mode", "pump": 1, "mode": "DRIP" }
+```
+
+The app shares the channel and ignores any message without a `moisture_level`.
+
+A malformed reading raises a Pydantic `ValidationError` that is not caught, so it closes the connection.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
-<!-- PUMP-MODE POLLING -->
-### Pump-Mode Polling
+<!-- PUMP COMMANDS -->
+### Pump Commands
 
-`app/services/device_service.py` reconciles the modes stored in the database with the modes the device is actually running. It only runs when `DEVICE_URL` is set.
+The device speaks mode **names**, the database speaks **ordinals**; `app/modes.py` converts between them.
 
-Every `DEVICE_POLL_INTERVAL_SECONDS` the poller:
+`PUT /pump/mode/` and the weather service both go through `pump_service.update_pump_mode()`, which stores the desired mode and broadcasts the `mode` command over the socket. The ESP32 applies it, runs the pump in that mode and confirms with `mode_applied`, which fills `pump_mode.observed_mode` and `pump_mode.last_seen_at`.
 
-1. `GET {DEVICE_URL}/mode` and reads the current mode of each pump.
-2. Writes those into `pump_mode.observed_mode` and `pump_mode.last_seen_at`.
-3. For any pump whose observed mode differs from the desired `pump_mode.mode`, sends `POST {DEVICE_URL}/mode` with `{"pump": 1, "mode": "DRIP"}`.
-4. Records the mode the device confirmed.
-
-The device speaks mode **names**, the database speaks **ordinals**; `app/modes.py` converts between them. Network failures are logged and swallowed, so an unreachable device never takes the API down.
+The activation parameters are pushed the same way: whenever the weather service changes them, it broadcasts the new `parameters` message, and a connecting device receives the current ones.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -445,7 +475,7 @@ Every `WEATHER_POLL_INTERVAL_SECONDS` the task:
 3. Reads the **state of the greenhouse**: the readings the microcontroller sent over the WebSocket, the last real reading of every sensor and how the soil moisture moved, how long ago each pump watered and how much water it used today.
 4. Asks **Gemini** to decide, in `app/services/gemini_service.py`. It gets the weather, the climate, the state of every zone and the parameters the pumps run with now, and it answers with json only: whether each pump may water at all, the moisture threshold it waters at, the minutes it has to wait between two activations, the mode it waters in, and a sentence saying why.
 5. Checks the answer and writes the **activation parameters** of every pump into `pump_parameter`.
-6. Sets the mode of the pumps that changed, which the device poller then pushes to the microcontroller.
+6. Sets the mode of the pumps that changed, which is pushed to the microcontroller over the WebSocket, and broadcasts the new parameters.
 
 Both outside sources come from [Open-Meteo](https://open-meteo.com), which needs no api key. The weather and the climate are asked for separately because they say different things: the forecast says what the next days will be like, the climate says what they usually are like.
 
@@ -514,7 +544,7 @@ The parameters are only written when they really change, so the logs show what t
 
 The microcontroller runs the pump in the mode it was told to, so the mode says how much water one activation gives. The litres of each mode are mirrored from the firmware in `app/modes.py`.
 
-The other three fields reach the device as well: the sketch reads `GET /pump/parameters/` every minute and waters by the threshold, the interval and the flag the API decided. See the [microcontroller doc](../microcontroller/README.md#watering-logic).
+The other three fields reach the device as well: the API pushes them over the WebSocket on connect and whenever they change, and the sketch waters by the threshold, the interval and the flag it decided. See the [microcontroller doc](../microcontroller/README.md#watering-logic).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -582,7 +612,7 @@ uv sync --group dev
 uv run pytest
 ```
 
-`tests/conftest.py` points `DB_CONN_STR` at a throwaway SQLite file **before** importing the app, so the tests never touch the configured database. It also sets `FRONTEND_URL=*` and disables the device poll.
+`tests/conftest.py` points `DB_CONN_STR` at a throwaway SQLite file **before** importing the app, so the tests never touch the configured database. It also sets `FRONTEND_URL=*` and disables the weather service.
 
 Fixtures:
 
@@ -599,7 +629,7 @@ The suite covers 114 tests:
 |            File             | Tests |                                                    What it covers                                                    |
 |-----------------------------|-------|----------------------------------------------------------------------------------------------------------------------|
 | `test_api.py`               |  19   | Every REST endpoint, paging and bucketing the readings, the 422s on bad queries and the 404 on an unknown path        |
-| `test_websocket.py`         |   4   | A real uvicorn server: connecting provisions the sensors, a reading is stored and broadcast, the garbled flag survives, a malformed payload is rejected |
+| `test_websocket.py`         |   8   | A real uvicorn server: connecting provisions the sensors and sends modes and parameters, readings are stored and broadcast, usage and mode acknowledgements are recorded, a malformed payload is rejected |
 | `test_device_service.py`    |   2   | Registering a microcontroller provisions the sensors, pumps and modes, and is idempotent                              |
 | `test_alert_service.py`     |   8   | Every alert rule, including that a garbled reading suppresses the others and that the latest reading wins            |
 | `test_pump_service.py`      |   8   | Pump and mode seeding, mode updates, history ordering, today's usage                                                 |
@@ -620,7 +650,7 @@ The suite covers 114 tests:
 
 - [x] Paginated and bucketed sensor readings
 - [x] Request logging with request ids
-- [x] Pump-mode polling and reconciliation
+- [x] Pump-mode commands over the WebSocket
 - [x] Weather and Gemini-driven pump adjustment
 - [ ] Add authentication — every endpoint and the WebSocket are open; a JWT system existed and was removed
 - [ ] Add rate limiting, gzip and HTTPS redirect — CORS and request logging are the only middleware

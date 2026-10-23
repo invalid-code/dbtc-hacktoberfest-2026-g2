@@ -71,7 +71,6 @@
         <li><a href="#watering-logic">Watering Logic</a></li>
         <li><a href="#pump-modes">Pump Modes</a></li>
         <li><a href="#communication">Communication</a></li>
-        <li><a href="#api-device-polling">API Device Polling</a></li>
         <li><a href="#halloween-easter-egg">Halloween Easter Egg</a></li>
       </ul>
     </li>
@@ -88,7 +87,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-The Arduino sketch for the ESP32. It reads the sensors, waters the plants, publishes the readings to the API over a WebSocket, reports how much water it used, reads the activation parameters the API decided from it, and exposes a small HTTP server so the API can change the pump modes.
+The Arduino sketch for the ESP32. It reads the sensors, waters the plants, publishes the readings and the water it used to the API over a WebSocket, and receives the pump modes and activation parameters over the same socket. It runs no server of its own and makes no HTTP requests.
 
 Part of [Greenhouse IoT](../README.md). The other components are the [FastAPI service](../api/README.md) and the [Flutter frontend](../frontend/README.md).
 
@@ -131,17 +130,13 @@ To get the firmware running, follow these steps.
    #define WS_SERVER_URL "your-api-host"
    #define WS_SERVER_PORT 443
    #define WS_PATH "/mc-ws/"
-   #define API_SERVER_URL "https://your-api-host"
-   #define PUMP_HISTORY_PATH "/pump/history/"
    ```
 
-   `WS_PATH` needs the trailing slash — the API does not redirect WebSocket requests. `PUMP_PARAMETERS_PATH` defaults to `/pump/parameters/` and only has to be defined to override it.
+   `WS_PATH` needs the trailing slash — the API does not redirect WebSocket requests.
 
 2. Install the libraries below in the Arduino IDE.
 
-3. Open `microcontroller/microcontroller.ino` and upload it to the board.
-
-4. Set `DEVICE_URL` on the API to the ESP32's address if the API should poll and push the pump modes — see [API device polling](#api-device-polling).
+3. Open `microcontroller/microcontroller.ino` and upload it to the board. The device connects out to the API and needs no address of its own.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -180,8 +175,6 @@ No pin is used twice: the pumps sit on the digital outputs 25, 26 and 27, the mo
 #define WS_SERVER_URL "your-api-host"
 #define WS_SERVER_PORT 443
 #define WS_PATH "/mc-ws/"
-#define API_SERVER_URL "https://your-api-host"
-#define PUMP_HISTORY_PATH "/pump/history/"
 ```
 
 `WS_PATH` needs the trailing slash — the API does not redirect WebSocket requests.
@@ -196,12 +189,10 @@ No pin is used twice: the pumps sit on the digital outputs 25, 26 and 27, the mo
 |        Library       |                           Used for                           |
 |----------------------|--------------------------------------------------------------|
 | `WiFi.h`             | Networking                                                   |
-| `WebSocketsClient.h` | The WebSocket to the API                                     |
-| `WebServer.h`        | The `/mode` HTTP server the API polls                        |
+| `WebSocketsClient.h` | The only channel to the API                                  |
 | `ArduinoJson.h`      | Building and parsing the JSON payloads                       |
-| `HTTPClient.h`       | Posting the water usage and reading the activation parameters|
 | `DHT.h`              | The DHT11 sensors                                            |
-| `freertos/*`         | The queue and tasks that keep the HTTP calls off the main loop|
+| `freertos/*`         | The mutex guarding the activation parameters                 |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -212,8 +203,9 @@ No pin is used twice: the pumps sit on the digital outputs 25, 26 and 27, the mo
 
 `loop()` runs continuously and does three things:
 
-1. `webSocket.loop()` — keeps the socket alive and pumps its reconnect timer.
-2. `deviceServer.handleClient()` — serves the `/mode` requests.
+1. `webSocket.loop()` — keeps the socket alive, pumps its reconnect timer and
+   receives the modes and parameters.
+2. Runs a pump when a mode command asked for it.
 3. Every 10 seconds, reads each zone and publishes it.
 
 Each 10-second cycle, for each of the three zones:
@@ -232,7 +224,7 @@ openPump(1, moisturePercent, temp, humidity, curMode1);
 
 The loop also reconnects to Wi-Fi if the connection drops.
 
-`setup()` starts the serial port at 115200, seeds the RNG, syncs the clock from `pool.ntp.org`, connects to Wi-Fi, opens the WebSocket, creates the usage queue and its task, starts the HTTP server, initialises the DHT sensors and sets the pin modes.
+`setup()` starts the serial port at 115200, seeds the RNG, syncs the clock from `pool.ntp.org`, connects to Wi-Fi, opens the WebSocket, creates the parameters mutex, initialises the DHT sensors and sets the pin modes.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -273,9 +265,9 @@ The parameters come from the API, which asks Gemini what every pump should do wi
 | `moisture_threshold`         | the soil moisture the pump waters at, in percent    |
 | `activation_interval_minutes`| the minutes the pump waits between two activations  |
 
-The mode is not part of them: the mode still comes over the `/mode` server, the API pushes it when it changes.
+The mode is not part of them: it arrives separately as a `mode` command over the socket, and the API sends it when it changes.
 
-Before the API has answered, the sketch waters at **30 %** without a wait, the way it always did, and it keeps the last parameters it read when the API cannot be reached. The greenhouse never stops watering because of an outage.
+Before the API has answered, the sketch waters at **30 %** without a wait, the way it always did, and it keeps the last parameters it received when the socket cannot be reached. The greenhouse never stops watering because of an outage.
 
 The pump decision always uses the **real** readings, even when a garbled reading is being published. The greenhouse keeps watering itself during the easter egg.
 
@@ -324,72 +316,55 @@ The current mode of each pump is kept in `curMode1`, `curMode2`, `curMode3`. The
 }
 ```
 
-The socket reconnects every 5 seconds. The device never reads from the WebSocket; `webSocketEvent()` only prints what arrives.
+The socket reconnects every 5 seconds. The API broadcasts the stored readings back to every socket; the device logs those and ignores them, and `webSocketEvent()` handles the commands that follow.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-#### Outbound: Water Usage over HTTP
+#### Outbound: Water Usage over the WebSocket
 
-After a pump actually runs, `reportWaterUsage()` puts a report on a FreeRTOS queue. A separate task pops it and posts it, so the HTTP request never blocks the sensor loop:
+After a pump actually runs, `reportWaterUsage()` sends the litres over the socket:
 
 ```json
-{ "pump": 1, "liters": 0.0060 }
+{ "type": "water_usage", "pump": 1, "liters": 0.0060 }
 ```
 
-The queue holds 8 entries. A report is dropped with a log line if the queue is full.
+Every pump run happens in the main loop — the sensor cycle or a pending mode command — so the socket callback never blocks on a watering.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-#### Outbound: The Activation Parameters
+#### Inbound: Modes and Parameters
 
-The `parametersTask` reads what the API decided for every pump every 60 seconds and stores it, so the sensor loop can ask for it without waiting for the network:
+On connect the API sends the modes it wants every pump to run. They are applied without watering, so a reconnect does not give the plants a drink:
 
 ```json
-[
-  {"pump_id": 1, "active": true, "moisture_threshold": 28,
-   "activation_interval_minutes": 90, "mode": 1, "mode_liters": 0.0028,
-   "reason": "the soil is dry and it stays hot", "updated_at": "..."}
-]
+{ "type": "modes", "modes": { "1": "FAST", "2": "SLOW", "3": "DRIP" } }
 ```
 
-The request is `GET {API_SERVER_URL}{PUMP_PARAMETERS_PATH}`, with `PUMP_PARAMETERS_PATH` set to `/pump/parameters/` in `secrets.h`. Only the `pump_id`, `active`, `moisture_threshold` and `activation_interval_minutes` fields are read; the rest is for the app.
+A mode change from the app arrives as a live command. The mode is stored, the device answers with `mode_applied`, and the watering is scheduled for the main loop:
 
-The parameters are written under a mutex, because the task writes them and the sensor loop reads them. A payload that is not a list, does not parse, or holds a pump outside 1, 2 and 3 is logged and ignored, and the last good parameters stay in place.
+```json
+{ "type": "mode", "pump": 1, "mode": "DRIP" }
+```
+
+```json
+{ "type": "mode_applied", "pump": 1, "mode": "DRIP" }
+```
+
+The activation parameters arrive on connect and again whenever the weather service changes them:
+
+```json
+{
+  "type": "parameters",
+  "parameters": [
+    {"pump_id": 1, "active": true, "moisture_threshold": 28,
+     "activation_interval_minutes": 90}
+  ]
+}
+```
+
+Only the `pump_id`, `active`, `moisture_threshold` and `activation_interval_minutes` fields are read. The parameters are written under a mutex, because the socket callback writes them and the sensor loop reads them. A payload that does not parse, or holds a pump outside 1, 2 and 3, is logged and ignored, and the last good parameters stay in place.
 
 A json boolean has to be read with a boolean default. `entry["active"] | 0` always falls through to the default, because ArduinoJson does not treat a boolean as an integer. `entry["active"] | true` is the right way.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-#### Inbound: The `/mode` Server
-
-The ESP32 runs a `WebServer` on port 80 with three handlers:
-
-| Method |  Path   |            Request            |                    Response                    |
-|--------|---------|-------------------------------|------------------------------------------------|
-|  GET   | `/mode` | —                             | `{"modes":{"1":"FAST","2":"SLOW","3":"DRIP"}}` |
-|  POST  | `/mode` | `{"pump": 1, "mode": "DRIP"}` | `{"pump":1,"mode":"DRIP"}`                     |
-|  GET   | `/parameters` | —                       | the activation parameters the device works with |
-
-`POST /mode` also accepts form arguments instead of a JSON body. It answers `400` with `{"error":"pump and mode are required"}` when the pump or the mode is missing, and `404` with `{"error":"unknown pump"}` for a pump that is not 1, 2 or 3.
-
-The API can send the same switch over the WebSocket instead: `{"pump": 1, "mode": "DRIP"}` is read in `webSocketEvent()`, the mode is stored and the pump runs in it right away. That works when the ESP32 is behind a NAT and the API cannot reach its HTTP server.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- API DEVICE POLLING -->
-### API Device Polling
-
-The API is the one that drives the modes, not the device. Set `DEVICE_URL` to the ESP32's address to enable it:
-
-```text
-DEVICE_URL=http://192.168.1.50
-```
-
-The API then polls `GET {DEVICE_URL}/mode` every `DEVICE_POLL_INTERVAL_SECONDS` (5 by default), records what the device reports in `pump_mode.observed_mode`, and pushes the desired mode with `POST {DEVICE_URL}/mode` whenever the two disagree. The ESP32 must be reachable from wherever the API runs.
-
-That is only needed for reconciliation: a mode changed from the app is also sent over the WebSocket at once, so the pump starts immediately even when `DEVICE_URL` is not set, as long as the ESP32 keeps its `/mc-ws/` connection open.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -415,8 +390,8 @@ A garbled reading is published with `"garbled": true`. The API stores the flag, 
 ## Roadmap
 
 - [x] Three-zone sensor reading and pump control
-- [x] Readings over the WebSocket and queued water-usage reports
-- [x] Activation parameters fetched from the API
+- [x] Readings and water usage over the WebSocket
+- [x] Activation parameters received over the WebSocket
 - [x] Halloween easter egg
 - [ ] Implement `SPRINKLE` mode — the function is an empty stub today
 - [ ] Send humidity as a float that matches the API schema — the API declares it as an int today

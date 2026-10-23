@@ -8,7 +8,6 @@ import tempfile
 TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / "dbtc_api_test.db"
 os.environ["DB_CONN_STR"] = f"sqlite+aiosqlite:///{TEST_DB_PATH}"
 os.environ["FRONTEND_URL"] = "*"
-os.environ["DEVICE_URL"] = ""
 # the weather service reaches out to the internet, the tests do not
 os.environ["WEATHER_ENABLED"] = "false"
 
@@ -23,7 +22,14 @@ from app.services import pump_service
 
 engine.echo = False
 
-TABLES = ("sensor_data", "sensor", "pump_history", "pump_mode", "pump")
+TABLES = (
+    "sensor_data",
+    "sensor",
+    "pump_history",
+    "pump_mode",
+    "pump_parameter",
+    "pump",
+)
 
 
 async def _wipe_tables() -> None:

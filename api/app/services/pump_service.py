@@ -9,6 +9,7 @@ from app.models import Pump, PumpHistory, PumpMode
 from app.modes import mode_litres, mode_name
 from app.repositories import parameter_repo, pump_repo
 from app.schemas import PumpHistoryRequest, PumpParameterResponse
+from app.services import websocket_service
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ async def update_pump_mode(
 ) -> PumpMode:
     await pump_repo.get_or_create_pump(db, pump_id)
     pump_mode = await pump_repo.create_or_update_pump_mode(db, pump_id, mode)
+    await websocket_service.broadcast_pump_mode(pump_id, mode_name(mode))
     logger.info("pump %s was set to %s mode", pump_id, mode_name(mode))
     return pump_mode
 

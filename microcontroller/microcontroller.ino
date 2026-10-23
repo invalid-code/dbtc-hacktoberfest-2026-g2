@@ -2,12 +2,8 @@
 
 #include <WiFi.h>
 #include <WebSocketsClient.h>
-#include <WebServer.h>
 #include <ArduinoJson.h>
-#include <HTTPClient.h>
 #include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <esp_system.h>
 #include <math.h>
@@ -15,12 +11,6 @@
 #include "DHT.h"
 
 #include "secrets.h"
-
-// The path of the activation parameters on the API. secrets.h may set another
-// one, but it is git-ignored, so the sketch needs a default of its own.
-#ifndef PUMP_PARAMETERS_PATH
-#define PUMP_PARAMETERS_PATH "/pump/parameters/"
-#endif
 
 // One DHT11 temperature/humidity sensor per zone.
 #define DHTPIN1 4
@@ -36,7 +26,6 @@ DHT tempSensor2(DHTPIN2, DHTTYPE);
 DHT tempSensor3(DHTPIN3, DHTTYPE);
 
 WebSocketsClient webSocket;
-WebServer deviceServer(80);
 
 enum OperatingMode {
   FAST,
@@ -91,9 +80,6 @@ int curMode3 = FAST;
 // The soil moisture a pump waters at until the API says otherwise.
 const int DEFAULT_MOISTURE_THRESHOLD = 30;
 
-// How often the activation parameters are read from the API, in milliseconds.
-const unsigned long PARAMETERS_REFRESH_MS = 60000;
-
 // What the API decided for one pump.
 struct ActivationParameters {
   bool active = true;
@@ -110,14 +96,9 @@ ActivationParameters activationParameters[4];
 unsigned long lastActivationMs[4] = {0, 0, 0, 0};
 bool hasActivated[4] = {false, false, false, false};
 
-// Guards the parameters: they are written by the parameters task and read by
-// the sensor loop.
+// Guards the parameters: they are written by the socket event and read by the
+// sensor loop.
 SemaphoreHandle_t parametersMutex = nullptr;
-
-struct UsageReport {
-  int pumpId;
-  float litres;
-};
 
 struct GarbledReading {
   int moisture;
@@ -125,12 +106,15 @@ struct GarbledReading {
   float temperature;
 };
 
-// Queue of pending water usage reports, drained by the usage reporter task.
-QueueHandle_t usageQueue = nullptr;
+// A mode change that arrived over the socket, run by the main loop so the
+// socket callback never blocks on a watering.
+bool pumpActivationPending = false;
+int pendingPumpId = 0;
+int pendingPumpMode = FAST;
 
 // ---- Mode helpers ----------------------------------------------------------
 
-// The device speaks mode names over HTTP, while the database stores ordinals.
+// The device speaks mode names over the socket, while the database stores ordinals.
 const char* modeName(int mode) {
   switch (mode) {
     case SLOW:
@@ -196,8 +180,39 @@ float modeLitres(int mode) {
 
 // ---- WebSocket event handling -----------------------------------------------
 
-// Callback for the socket library; the device only prints what arrives, it never
-// reads from the socket.
+// Tells the API which mode a pump is running, so it can record what it observed.
+void sendModeApplied(int pumpId, int mode) {
+  String json = "{\"type\":\"mode_applied\",\"pump\":" + String(pumpId) +
+                ",\"mode\":\"" + String(modeName(mode)) + "\"}";
+  webSocket.sendTXT(json);
+}
+
+// Applies a mode that came over the socket. A live command also schedules a
+// watering, the modes sent on connect only bring the device in step.
+bool applyPumpMode(int pumpId, int mode, bool runPump) {
+  int* slot = modeSlotFor(pumpId);
+  if (slot == nullptr) {
+    return false;
+  }
+
+  bool changed = (*slot != mode);
+  *slot = mode;
+  sendModeApplied(pumpId, mode);
+
+  if (changed) {
+    Serial.printf("Pump %d switched to %s over the socket\n", pumpId,
+                  modeName(mode));
+  }
+
+  if (changed && runPump) {
+    pumpActivationPending = true;
+    pendingPumpId = pumpId;
+    pendingPumpMode = mode;
+  }
+  return changed;
+}
+
+// Callback for the socket library; everything the device knows arrives here.
 void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_DISCONNECTED:
@@ -211,31 +226,39 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
     case WStype_TEXT: {
       JsonDocument doc;
       if (deserializeJson(doc, payload, length)) {
-        Serial.printf("Received: %s\n", payload);
+        Serial.printf("Could not parse: %s\n", payload);
         break;
       }
 
-      int pumpId = doc["pump"] | 0;
-      const char* requestedMode = doc["mode"] | "";
-      if (pumpId < 1 || pumpId > 3 || requestedMode[0] == '\0') {
-        Serial.printf("Received: %s\n", payload);
+      String messageType = doc["type"] | "";
+
+      if (messageType == "modes") {
+        JsonObject modes = doc["modes"].as<JsonObject>();
+        for (JsonPair entry : modes) {
+          int pumpId = String(entry.key().c_str()).toInt();
+          const char* name = entry.value().as<const char*>();
+          if (pumpId >= 1 && pumpId <= 3 && name != nullptr) {
+            applyPumpMode(pumpId, modeFromName(String(name)), false);
+          }
+        }
         break;
       }
 
-      int mode = modeFromName(String(requestedMode));
-      int* slot = modeSlotFor(pumpId);
-      if (slot == nullptr || *slot == mode) {
+      if (messageType == "mode") {
+        int pumpId = doc["pump"] | 0;
+        const char* requestedMode = doc["mode"] | "";
+        if (pumpId >= 1 && pumpId <= 3 && requestedMode[0] != '\0') {
+          applyPumpMode(pumpId, modeFromName(String(requestedMode)), true);
+        }
         break;
       }
 
-      *slot = mode;
-      Serial.printf("Pump %d switched to %s over the socket\n", pumpId,
-                    modeName(mode));
+      if (messageType == "parameters") {
+        applyActivationParameters(doc["parameters"].as<JsonArray>());
+        break;
+      }
 
-      // Demonstration: run the pump right away in the newly chosen mode.
-      hasActivated[pumpId] = true;
-      lastActivationMs[pumpId] = millis();
-      activatePumpMode(pumpId, pumpPinFor(pumpId), mode);
+      Serial.printf("Received: %s\n", payload);
       break;
     }
 
@@ -252,45 +275,11 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 // ---- The activation parameters ------------------------------------------------
 
-// Reads the activation parameters of every pump from the API. The last ones
-// are kept when the API cannot be reached, so the greenhouse keeps watering
+// Applies the activation parameters the API sends over the socket. The last
+// ones are kept until the API sends new ones, so the greenhouse keeps watering
 // itself the way it did before.
-void fetchActivationParameters() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Skipping the pump parameters, wifi is down");
-    return;
-  }
-
-  HTTPClient http;
-  String url = String(API_SERVER_URL) + String(PUMP_PARAMETERS_PATH);
-  if (!http.begin(url)) {
-    Serial.println("Could not start the pump parameters request");
-    return;
-  }
-
-  int status = http.GET();
-  String body = "";
-  if (status == 200) {
-    body = http.getString();
-  } else {
-    Serial.printf("Pump parameters request failed (%d): %s\n", status,
-                  http.getString().c_str());
-  }
-  http.end();
-
-  if (body.length() == 0) {
-    return;
-  }
-
-  JsonDocument doc;
-  if (deserializeJson(doc, body)) {
-    Serial.println("The pump parameters did not parse");
-    return;
-  }
-
-  JsonArray pumps = doc.as<JsonArray>();
+void applyActivationParameters(JsonArray pumps) {
   if (pumps.isNull()) {
-    Serial.println("The pump parameters did not hold a list of pumps");
     return;
   }
 
@@ -341,147 +330,19 @@ ActivationParameters readParameters(int pumpId) {
   return parameters;
 }
 
-// The task that keeps the activation parameters fresh.
-void parametersTask(void* arg) {
-  (void)arg;
-  for (;;) {
-    fetchActivationParameters();
-    vTaskDelay(PARAMETERS_REFRESH_MS / portTICK_PERIOD_MS);
-  }
-}
-
-// ---- The device HTTP server (/mode handlers) ---------------------------------
-
-// The API polls this to learn which mode each pump is running.
-void handleGetMode() {
-  String json = "{\"modes\":{";
-  json += "\"1\":\"" + String(modeName(curMode1)) + "\",";
-  json += "\"2\":\"" + String(modeName(curMode2)) + "\",";
-  json += "\"3\":\"" + String(modeName(curMode3)) + "\"";
-  json += "}}";
-  deviceServer.send(200, "application/json", json);
-}
-
-// The API pushes the desired mode here; it accepts a JSON body or form arguments.
-void handlePostMode() {
-  int pumpId = 0;
-  int mode = FAST;
-  bool parsed = false;
-
-  String body = deviceServer.arg("plain");
-  if (body.length() > 0) {
-    JsonDocument doc;
-    if (!deserializeJson(doc, body.c_str())) {
-      pumpId = doc["pump"] | 0;
-      const char* requested = doc["mode"] | "FAST";
-      mode = modeFromName(String(requested));
-      parsed = true;
-    }
-  }
-
-  if (!parsed) {
-    if (!deviceServer.hasArg("pump") || !deviceServer.hasArg("mode")) {
-      deviceServer.send(
-          400, "application/json", "{\"error\":\"pump and mode are required\"}");
-      return;
-    }
-    pumpId = deviceServer.arg("pump").toInt();
-    mode = modeFromName(deviceServer.arg("mode"));
-  }
-
-  int* slot = modeSlotFor(pumpId);
-  if (slot == nullptr) {
-    deviceServer.send(404, "application/json", "{\"error\":\"unknown pump\"}");
-    return;
-  }
-
-  bool modeChanged = (*slot != mode);
-  *slot = mode;
-  Serial.printf("Pump %d switched to %s\n", pumpId, modeName(mode));
-
-  String json = "{\"pump\":" + String(pumpId) + ",\"mode\":\"" +
-                String(modeName(mode)) + "\"}";
-  deviceServer.send(200, "application/json", json);
-
-  // Demonstration: run the pump right away in the newly chosen mode instead of
-  // waiting for the soil to dry out.
-  if (modeChanged) {
-    hasActivated[pumpId] = true;
-    lastActivationMs[pumpId] = millis();
-    activatePumpMode(pumpId, pumpPinFor(pumpId), mode);
-  }
-}
-
-// Shows the activation parameters the device is working with.
-void handleGetParameters() {
-  String json = "{\"parameters\":{";
-  for (int pumpId = 1; pumpId <= 3; pumpId++) {
-    ActivationParameters parameters = readParameters(pumpId);
-    json += "\"" + String(pumpId) + "\":{";
-    json += "\"active\":" + String(parameters.active ? "true" : "false");
-    json += ",\"moisture_threshold\":" + String(parameters.moistureThreshold);
-    json += ",\"activation_interval_minutes\":" +
-            String(parameters.intervalMs / 60000UL);
-    json += ",\"known\":" + String(parameters.known ? "true" : "false");
-    json += "},";
-  }
-  // the last entry left a comma behind
-  json = json.substring(0, json.length() - 1);
-  json += "}}";
-  deviceServer.send(200, "application/json", json);
-}
-
 // ---- Water usage reporting --------------------------------------------------
 
-// Posts the water usage to the API.
-void sendPumpWaterUsage(int pumpId, float litres) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Skipping pump water usage, wifi is down");
-    return;
-  }
-
-  HTTPClient http;
-  String url = String(API_SERVER_URL) + String(PUMP_HISTORY_PATH);
-  if (!http.begin(url)) {
-    Serial.println("Could not start the pump history request");
-    return;
-  }
-  http.addHeader("Content-Type", "application/json");
-
+// Sends the water usage to the API over the socket.
+void reportWaterUsage(int pumpId, float litres) {
   char litresStr[16];
   snprintf(litresStr, sizeof(litresStr), "%.4f", litres);
-  String body =
-      "{\"pump\":" + String(pumpId) + ",\"liters\":" + String(litresStr) + "}";
+  String json = "{\"type\":\"water_usage\",\"pump\":" + String(pumpId) +
+                ",\"liters\":" + String(litresStr) + "}";
 
-  int status = http.POST(body);
-  if (status >= 200 && status < 300) {
+  if (webSocket.sendTXT(json)) {
     Serial.printf("Reported %.4f litres for pump %d\n", litres, pumpId);
   } else {
-    Serial.printf("Pump history request failed (%d): %s\n", status,
-                  http.getString().c_str());
-  }
-  http.end();
-}
-
-// Puts the report on the queue so the HTTP call never blocks the sensor loop.
-void reportWaterUsage(int pumpId, float litres) {
-  if (usageQueue == nullptr) {
-    return;
-  }
-  UsageReport report = {pumpId, litres};
-  if (xQueueSend(usageQueue, &report, 0) != pdTRUE) {
-    Serial.println("Dropped a pump water usage report, queue is full");
-  }
-}
-
-// The task that drains the queue and does the actual POST.
-void usageReporterTask(void* arg) {
-  (void)arg;
-  for (;;) {
-    UsageReport report;
-    if (xQueueReceive(usageQueue, &report, portMAX_DELAY) == pdTRUE) {
-      sendPumpWaterUsage(report.pumpId, report.litres);
-    }
+    Serial.println("Could not report the pump water usage over the socket");
   }
 }
 
@@ -652,8 +513,7 @@ void openPump(int pumpId, int moisturePercent, int curMode) {
 
 // ---- Setup and the main loop ------------------------------------------------
 
-// Connects to Wi-Fi, opens the socket, starts the HTTP server, the usage task
-// and the parameters task, and initialises the sensors.
+// Connects to Wi-Fi and the socket and initialises the sensors.
 void setup() {
   Serial.begin(115200);
 
@@ -676,25 +536,10 @@ void setup() {
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
 
-  usageQueue = xQueueCreate(8, sizeof(UsageReport));
-  if (usageQueue != nullptr) {
-    xTaskCreate(usageReporterTask, "usageReporter", 4096, nullptr, 1, nullptr);
-  } else {
-    Serial.println("Could not create the pump water usage queue");
-  }
-
   parametersMutex = xSemaphoreCreateMutex();
-  if (parametersMutex != nullptr) {
-    xTaskCreate(parametersTask, "parameters", 4096, nullptr, 1, nullptr);
-  } else {
+  if (parametersMutex == nullptr) {
     Serial.println("Could not create the pump parameters lock");
   }
-
-  deviceServer.on("/mode", HTTP_GET, handleGetMode);
-  deviceServer.on("/mode", HTTP_POST, handlePostMode);
-  deviceServer.on("/parameters", HTTP_GET, handleGetParameters);
-  deviceServer.begin();
-  Serial.println("Pump mode server listening");
 
   tempSensor1.begin();
   tempSensor2.begin();
@@ -712,11 +557,19 @@ void setup() {
   Serial.println("ESP32 Watering System Initialized");
 }
 
-// Services the socket and the HTTP server, and every 10 seconds reads each zone,
-// publishes the reading and checks whether to water.
+// Services the socket, and every 10 seconds reads each zone, publishes the
+// reading and checks whether to water.
 void loop() {
   webSocket.loop();
-  deviceServer.handleClient();
+
+  // A mode change that arrived over the socket runs the pump here, outside the
+  // socket callback.
+  if (pumpActivationPending) {
+    pumpActivationPending = false;
+    hasActivated[pendingPumpId] = true;
+    lastActivationMs[pendingPumpId] = millis();
+    activatePumpMode(pendingPumpId, pumpPinFor(pendingPumpId), pendingPumpMode);
+  }
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("Wi-Fi disconnected. Reconnecting...");

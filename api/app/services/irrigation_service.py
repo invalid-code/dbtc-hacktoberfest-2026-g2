@@ -27,7 +27,12 @@ from app.config import settings
 from app.database import AsyncSessionLocal
 from app.modes import MODE_INDEX, PumpModeName, mode_name
 from app.repositories import parameter_repo, pump_repo, sensor_repo
-from app.services import gemini_service, pump_service, weather_service
+from app.services import (
+    gemini_service,
+    pump_service,
+    weather_service,
+    websocket_service,
+)
 from app.services.gemini_service import ZoneState
 from app.services.weather_service import Climate, Weather
 
@@ -189,6 +194,7 @@ async def adjust_pump_parameters(db: AsyncSession) -> None:
 
     fallback = compute_parameters(weather, climate)
     modes = {mode.pump_id: mode.mode for mode in await pump_repo.get_all_pump_modes(db)}
+    changed = False
 
     for pump in pumps:
         decision = decisions.get(pump.id)
@@ -209,6 +215,7 @@ async def adjust_pump_parameters(db: AsyncSession) -> None:
             mode=parameters.mode,
             reason=parameters.reason,
         )
+        changed = True
         logger.info(
             "pump %s was adjusted by %s: %s",
             pump.id,
@@ -218,6 +225,11 @@ async def adjust_pump_parameters(db: AsyncSession) -> None:
 
         if modes.get(pump.id) != parameters.mode:
             await pump_service.update_pump_mode(db, pump.id, parameters.mode)
+
+    if changed:
+        await websocket_service.broadcast_pump_parameters(
+            await pump_service.get_pump_parameters(db)
+        )
 
 
 async def _zone_states(

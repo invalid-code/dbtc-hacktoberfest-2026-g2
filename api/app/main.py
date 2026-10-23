@@ -18,7 +18,7 @@ from app.routers import (
     sensor_router,
     websocket_router,
 )
-from app.services import device_service, irrigation_service, pump_service
+from app.services import irrigation_service, pump_service
 
 configure_logging()
 
@@ -38,21 +38,13 @@ async def lifespan(app: FastAPI):
     The schema is owned by Alembic, so the tables must already exist
     (`alembic upgrade head`) before the app starts.
 
-    Two background tasks run next to the API: the device poll task, which
-    only starts when DEVICE_URL is configured, so the API runs without a
-    microcontroller attached, and the weather task, which adjusts the pumps
-    from the outside weather and climate.
+    The weather task runs next to the API and adjusts the pumps from the
+    outside weather and climate; everything that reaches the microcontroller
+    goes over its WebSocket.
     """
     async with AsyncSessionLocal() as db:
         await pump_service.ensure_pumps(db)
         await pump_service.ensure_pump_modes(db)
-
-    poll_task = None
-    if device_service.device_configured():
-        poll_task = asyncio.create_task(device_service.poll_loop())
-        logger.info("device polling started against %s", settings.DEVICE_URL)
-    else:
-        logger.info("device polling is off, no DEVICE_URL is configured")
 
     weather_task = None
     if settings.WEATHER_ENABLED:
@@ -66,13 +58,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("the api is ready")
     yield
-    for task in (poll_task, weather_task):
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    if weather_task:
+        weather_task.cancel()
+        try:
+            await weather_task
+        except asyncio.CancelledError:
+            pass
     logger.info("the api is stopping")
 
 

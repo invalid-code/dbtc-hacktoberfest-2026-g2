@@ -112,11 +112,12 @@ Component-level documentation:
                     ┌──────────────────────────┐
                     │ ESP32 (microcontroller)  │
                     │ DHT11 x3, soil sensors x3│
-                    │pumps x3, HTTP mode server│
-                    └────────┬───────────┬─────┘
-              WebSocket      │           │  HTTP
-        /mc-ws/ (readings)   │           │  POST /pump/history/
-                    ┌────────▼───────────▼───────┐
+                    │       pumps x3           │
+                    └────────────┬─────────────┘
+                                 │  WebSocket /mc-ws/
+                                 │  readings and usage up,
+                                 │  modes and parameters down
+                    ┌────────────▼───────────────┐
                     │       FastAPI (api/)       │
                     │ routers → services → repos │
                     │        ↕ SQLAlchemy        │
@@ -129,9 +130,7 @@ Component-level documentation:
                     └────────────────────────────┘
 ```
 
-The microcontroller and the app share one WebSocket channel. When a socket connects, the API registers the microcontroller and provisions the greenhouse's sensors and pumps. The device publishes readings to `/mc-ws/`, the API stores each one and broadcasts it to every connected socket, and the app renders it live.
-
-Pump modes travel the other way: the app writes the desired mode to the API, the API stores it, and the API's poller pushes it to the device over HTTP.
+The microcontroller and the app share one WebSocket channel. When a socket connects, the API registers the microcontroller and provisions the greenhouse's sensors and pumps. The device publishes readings and water usage to `/mc-ws/`, the API stores them, and it sends the pump modes and activation parameters back down the same socket. The app renders the readings live and changes the modes through the REST API.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -152,15 +151,15 @@ ESP32 (every 10 s)  ──WS /mc-ws/──▶  API
 
 ```
 app dropdown         ──PUT /pump/mode/──▶  API (stores desired mode)
-API poller           ──GET/POST /mode──▶  ESP32 (switches the pump)
-                                          API records the observed mode
+                                            └─▶ WS /mc-ws/ ──▶ ESP32 (switches and runs the pump)
+                                                               ESP32 ──WS──▶ API (records the observed mode)
 ```
 
 **3. Water usage — device → API → app**
 
 ```
-ESP32 (after a pump runs)  ──POST /pump/history/──▶  API
-app                                                 ──GET /pump/history/──▶ API
+ESP32 (after a pump runs)  ──WS /mc-ws/──▶  API (stores the watering)
+app                                        ──GET /pump/history/──▶ API
 ```
 
 **4. Weather — outside → AI → pumps**
@@ -170,8 +169,8 @@ Open-Meteo (hourly)  ──▶  API weather service
                             ├─▶ reads the forecast and the climate
                             └─▶ Gemini reads them with the state of the greenhouse
                                  ├─▶ decides when each pump may water
-                                 ├─▶ the mode goes to the device, the poller pushes it
-                                 └─▶ the ESP32 reads the parameters and waters by them
+                                 └─▶ the mode and the parameters go down the socket,
+                                     and the ESP32 waters by them
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -309,7 +308,7 @@ To get a local copy up and running, follow these steps.
    WEATHER_LONGITUDE=120.9842
    ```
 
-   `FRONTEND_URL` is the CORS allow-list. It accepts a comma-separated list of origins, and `*` allows everything. Set `DEVICE_URL` to the ESP32's IP address to enable pump-mode polling (see the [microcontroller doc](microcontroller/README.md#api-device-polling)). `WEATHER_LATITUDE` and `WEATHER_LONGITUDE` say where the greenhouse stands, the weather service asks for the forecast and the climate of that place and adjusts the pumps with it (see the [weather doc](api/README.md#the-weather-service)).
+   `FRONTEND_URL` is the CORS allow-list. It accepts a comma-separated list of origins, and `*` allows everything. `WEATHER_LATITUDE` and `WEATHER_LONGITUDE` say where the greenhouse stands, the weather service asks for the forecast and the climate of that place and adjusts the pumps with it (see the [weather doc](api/README.md#the-weather-service)). The microcontroller needs no address of its own: it keeps the WebSocket open, so the API can reach it anywhere.
 
    The API logs every request to the console. `LOG_LEVEL` and `LOG_FORMAT` in `api/.env` say how much is logged and whether it is plain text or json, see the [logging doc](api/README.md#logging).
 
@@ -341,11 +340,9 @@ To get a local copy up and running, follow these steps.
    #define WS_SERVER_URL "your-api-host"
    #define WS_SERVER_PORT 443
    #define WS_PATH "/mc-ws/"
-   #define API_SERVER_URL "https://your-api-host"
-   #define PUMP_HISTORY_PATH "/pump/history/"
    ```
 
-   `secrets.h` is git-ignored. Do not commit it. For a TLS deployment the WebSocket library needs to be configured for `wss://`.
+   `secrets.h` is git-ignored. Do not commit it. For a TLS deployment the WebSocket library needs to be configured for `wss://`. The device only needs this socket: readings and water usage go up it, and modes and activation parameters come down it.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

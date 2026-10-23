@@ -66,7 +66,7 @@ system keeps working with its local rules.
 | Zone | One greenhouse position, identified by a number from 1 to 3. |
 | Pump | The actuator of a zone. Pump IDs are `1`, `2`, and `3`. |
 | Desired mode | The mode the API stores for a pump and wants the device to run. |
-| Observed mode | The mode the API last read back from the device. |
+| Observed mode | The mode the device last confirmed over the WebSocket. |
 | Activation | One pump run. |
 | Activation parameters | Whether a pump may water, its moisture threshold, its interval, and its mode. |
 | Bucket | Readings averaged over a unit of time (minute, hour, day, week, month, or year). |
@@ -78,12 +78,13 @@ system keeps working with its local rules.
                     +--------------------------+
                     | ESP32 (microcontroller)  |
                     | 3x soil, 3x DHT11        |
-                    | 3x pump, HTTP mode server|
-                    +-----+--------------+-----+
-         WebSocket        |              |  HTTP
-       /mc-ws/ readings   |              |  POST /pump/history/
-                          v              v
-                    +--------------------------+
+                    | 3x pump, no HTTP server  |
+                    +------------+-------------+
+                                 |
+                                 |  WebSocket /mc-ws/
+                                 |  readings + usage up
+                                 |  modes + parameters down
+                    +------------v-------------+
                     |       FastAPI (api/)     |
                     | routers -> services ->   |
                     | repositories             |
@@ -104,16 +105,17 @@ External services used by the API:
 ```
 
 The microcontroller and the app share the `/mc-ws/` channel. The device
-publishes readings, the API stores each one, and the API broadcasts it to every
-connected client, including the app.
+publishes readings and water usage, the API stores them, and the API broadcasts
+readings to every connected client, including the app. The device runs no HTTP
+server and makes no HTTP requests.
 
-Pump control travels the other way. The app writes the desired mode through the
-API. The API's device poller pushes the mode to the device's HTTP server and
-records the observed mode.
+Pump control travels the other way over the same socket. The app writes the
+desired mode through the REST API, which broadcasts the mode to the device and
+records the `mode_applied` acknowledgement.
 
-Watering parameters travel from the API to the device. The API's irrigation
-service computes them from weather, climate, and greenhouse state, stores them,
-and the device fetches them every minute.
+Watering parameters travel from the API to the device over the same socket. The
+API's irrigation service computes them from weather, climate, and greenhouse
+state, stores them, and pushes them on connect and whenever they change.
 
 ## 5. Functional requirements
 
@@ -123,18 +125,19 @@ and the device fetches them every minute.
   values supplied by `secrets.h`: `SSID`, `PASSWORD`, `WS_SERVER_URL`,
   `WS_SERVER_PORT`, and `WS_PATH`. It MUST retry the WebSocket connection every
   5 seconds.
-- **DEV-2** The firmware MUST poll the API WebSocket and HTTP server
-  continuously, and MUST reconnect Wi-Fi if the connection drops.
+- **DEV-2** The firmware MUST poll the API WebSocket continuously, and MUST
+  reconnect Wi-Fi if the connection drops. It MUST NOT run an HTTP server or
+  make HTTP requests.
 - **DEV-3** Every 10 seconds the firmware MUST read all three zones, map each
   raw soil value from 0-2800 to 0-100 percent, constrain the result to 0-100,
   and read temperature and humidity from the zone's DHT11.
 - **DEV-4** For each zone, the firmware MUST publish a WebSocket payload with
   `sensor`, `moisture_level`, `temperature`, `humidity`, and `garbled`. It MUST
   NOT send `recorded_at`; the API assigns the timestamp.
-- **DEV-5** The firmware MUST fetch `GET /pump/parameters/` every 60 seconds.
-  On failure it MUST keep the last parameters it received. It MUST apply
-  received parameters atomically; the sensor loop must not read a partially
-  updated parameter set.
+- **DEV-5** The firmware MUST receive the activation parameters over the
+  WebSocket, both on connect and whenever the API broadcasts new ones, and MUST
+  keep the last parameters it received. It MUST apply received parameters
+  atomically; the sensor loop must not read a partially updated parameter set.
 - **DEV-6** A pump MUST activate only when all of the following hold:
   - the pump is `active`,
   - the real soil moisture is at or below `moisture_threshold`,
@@ -143,15 +146,16 @@ and the device fetches them every minute.
 - **DEV-7** Before the API has supplied parameters, a pump MUST behave as
   `active = true`, `moisture_threshold = 30`, and no interval.
 - **DEV-8** An activation MUST run the pump according to its current mode and
-  MUST enqueue a water-usage report with the calculated litres. A background
-  task MUST POST the report to `/pump/history/` so the sensor loop is not
-  blocked.
-- **DEV-9** The firmware MUST expose an HTTP server on port 80 with:
-  - `GET /mode`: the current mode name of every pump,
-  - `POST /mode`: set a pump's mode from JSON or form arguments,
-  - `GET /parameters`: the activation parameters the device is currently using.
-- **DEV-10** `POST /mode` MUST reject an unknown pump with 404 and a request
-  without `pump` and `mode` with 400.
+  MUST send a `water_usage` message with the calculated litres over the
+  WebSocket.
+- **DEV-9** The firmware MUST handle these messages received over the
+  WebSocket:
+  - `modes`: apply every pump's mode without watering,
+  - `mode`: apply a pump's mode and run it,
+  - `parameters`: apply the activation parameters.
+  It MUST acknowledge an applied mode with a `mode_applied` message.
+- **DEV-10** A `mode` message for an unknown pump, or without `pump` and
+  `mode`, MUST be ignored and logged.
 - **DEV-11** The firmware MUST implement the Halloween easter egg described in
   section 8.6. Pump decisions MUST always use the real readings, even when a
   garbled reading is published.
@@ -167,9 +171,8 @@ and the device fetches them every minute.
   before the service starts.
 - **API-3** At startup the API MUST seed pumps `1`, `2`, and `3` if they do not
   exist, and give them a FAST mode row if they have none. It MUST start the
-  device poller only when `DEVICE_URL` is non-empty, and the irrigation poller
-  only when `WEATHER_ENABLED` is true. Both background tasks MUST be cancelled
-  cleanly at shutdown.
+  irrigation poller only when `WEATHER_ENABLED` is true, and cancel it cleanly
+  at shutdown.
 - **API-4** `GET /sensor/` MUST list all known sensors.
 - **API-5** `GET /sensor/data/` MUST return readings newest first, ordered by
   `recorded_at` descending and then `id` descending. It MUST support:
@@ -183,11 +186,13 @@ and the device fetches them every minute.
   `moisture_level`, `humidity`, `temperature`, and `readings`. Weeks MUST start
   on Monday. Out-of-range `limit` or `offset` values MUST be rejected with 422.
 - **API-6** The WebSocket endpoint `/mc-ws/` MUST accept, validate, store, and
-  broadcast sensor readings. On connect it MUST register the microcontroller
-  and provision sensors `1`, `2`, `3` and pumps `1`, `2`, `3` (with FAST mode
-  rows) if they do not exist. The broadcast MUST add an ISO-8601 `recorded_at`
-  and MUST keep the key `sensor` (not `sensor_id`). A malformed payload MUST
-  close the connection.
+  broadcast sensor readings, record `water_usage` messages, and record
+  `mode_applied` acknowledgements as the observed mode. On connect it MUST
+  register the microcontroller, provision sensors `1`, `2`, `3` and pumps `1`,
+  `2`, `3` (with FAST mode rows) if they do not exist, and send the desired
+  modes and the current activation parameters down the socket. The reading
+  broadcast MUST add an ISO-8601 `recorded_at` and MUST keep the key `sensor`
+  (not `sensor_id`). A malformed reading MUST close the connection.
 - **API-7** A reading for an unknown sensor MUST create the sensor row on
   demand. A reading without `recorded_at` MUST be stamped with the current local
   time. `garbled` MUST default to `false`.
@@ -195,17 +200,12 @@ and the device fetches them every minute.
   pump's desired mode, observed mode, last-seen time, and pump id.
 - **API-9** `PUT /pump/mode/` MUST set the desired mode of a pump from
   `{"pump": <id>, "pump_mode": <ordinal>}`. Both fields are required. The pump
-  MUST be created on demand. The endpoint MUST NOT wait for the device; the
-  poller reconciles the mode.
-- **API-10** The device poller MUST, every `DEVICE_POLL_INTERVAL_SECONDS`:
-  1. read `GET {DEVICE_URL}/mode`,
-  2. store each returned mode as `observed_mode` and the current time as
-     `last_seen_at`,
-  3. push every desired mode that differs from the observed mode with
-     `POST {DEVICE_URL}/mode`,
-  4. store the mode the device confirms.
-  Device and network failures MUST be logged and MUST NOT stop the poller or
-  the API.
+  MUST be created on demand. The endpoint MUST broadcast a `mode` command over
+  the WebSocket so the device applies it and runs the pump.
+- **API-10** Every mode change, whether it comes from `PUT /pump/mode/` or the
+  irrigation service, MUST be broadcast over the WebSocket. The device's
+  `mode_applied` acknowledgement MUST set `observed_mode` and `last_seen_at`.
+  Socket failures MUST be logged and MUST NOT stop the API.
 - **API-11** `GET /pump/history/` MUST return watering entries newest first.
   `POST /pump/history/` MUST record `liters` with an optional `recorded_at`
   (default now) and an optional `pump` (creating it on demand).
@@ -310,7 +310,7 @@ and the device fetches them every minute.
 | GET | `/pump/usage/today` | - | `{"liters": float}` |
 | GET | `/pump/parameters/` | - | Activation parameters per pump |
 | GET | `/alerts/` | - | `{"alerts": [{"message": str, "severity": str}]}` |
-| WS | `/mc-ws/` | Sensor reading JSON | Stored reading broadcast |
+| WS | `/mc-ws/` | Readings, `water_usage`, `mode_applied` | Stored reading broadcast, `modes`, `parameters`, `mode` |
 
 Representative payloads:
 
@@ -369,7 +369,7 @@ exactly as `/mc-ws/`.
 
 ### 6.2 WebSocket protocol
 
-The device publishes:
+The device publishes a reading:
 
 ```json
 {
@@ -381,7 +381,19 @@ The device publishes:
 }
 ```
 
-The API broadcasts the stored form:
+It reports a watering after a pump runs:
+
+```json
+{ "type": "water_usage", "pump": 1, "liters": 0.006 }
+```
+
+It confirms an applied mode:
+
+```json
+{ "type": "mode_applied", "pump": 1, "mode": "DRIP" }
+```
+
+The API broadcasts the stored reading to every connected socket:
 
 ```json
 {
@@ -394,20 +406,39 @@ The API broadcasts the stored form:
 }
 ```
 
+The API sends the device its commands. On connect, the desired modes and the
+current activation parameters:
+
+```json
+{ "type": "modes", "modes": {"1": "FAST", "2": "FAST", "3": "FAST"} }
+```
+
+```json
+{
+  "type": "parameters",
+  "parameters": [
+    {
+      "pump_id": 1,
+      "active": true,
+      "moisture_threshold": 30,
+      "activation_interval_minutes": 60
+    }
+  ]
+}
+```
+
+Whenever a mode changes, a live command that also runs the pump:
+
+```json
+{ "type": "mode", "pump": 1, "mode": "DRIP" }
+```
+
 Every connected socket receives every reading, including the socket that sent
-it. A failed send drops that client.
+it. The app ignores messages without a `moisture_level`. A failed send drops
+that client. The device speaks mode names; the API converts between names and
+ordinals.
 
-### 6.3 Device HTTP API
-
-| Method | Path | Request | Response |
-|--------|------|---------|----------|
-| GET | `/mode` | - | `{"modes": {"1": "FAST", "2": "SLOW", "3": "DRIP"}}` |
-| POST | `/mode` | JSON `{"pump": 1, "mode": "DRIP"}` or form `pump`/`mode` | `{"pump": 1, "mode": "DRIP"}` |
-| GET | `/parameters` | - | `{"parameters": {"1": {...}, "2": {...}, "3": {...}}}` |
-
-The device speaks mode names. The API converts between names and ordinals.
-
-### 6.4 External services
+### 6.3 External services
 
 - **Open-Meteo forecast:** current temperature, humidity, and precipitation;
   daily maximum/minimum temperature, precipitation sum, and FAO
@@ -435,7 +466,7 @@ All tables are managed by Alembic.
 
 The `sensor_data.recorded_at` index supports pagination and time filtering.
 `pump_mode.mode` is the desired state; `observed_mode` and `last_seen_at` are
-written only by the device poller.
+written only by the device's `mode_applied` acknowledgement.
 
 Datetimes are stored as naive local times. The API uses `datetime.now()` for
 defaults and for "today", "stale", and "minutes since" calculations.
@@ -573,8 +604,6 @@ for years. Chart x-axis positions are based on real time, not on bucket index.
 |----------|---------|---------|
 | `DB_CONN_STR` | required | Async SQLAlchemy URL, normally `postgresql+asyncpg://...` |
 | `FRONTEND_URL` | `*` | Comma-separated CORS origins |
-| `DEVICE_URL` | `""` | Device base URL; empty disables polling |
-| `DEVICE_POLL_INTERVAL_SECONDS` | `5.0` | Pump-mode poll interval |
 | `WEATHER_ENABLED` | `true` | Enable the irrigation timer |
 | `WEATHER_LATITUDE` | `14.5995` | Greenhouse latitude |
 | `WEATHER_LONGITUDE` | `120.9842` | Greenhouse longitude |
@@ -613,12 +642,9 @@ define is absent:
 `microcontroller/secrets.h` is git-ignored and MUST provide:
 
 - `SSID` and `PASSWORD` for Wi-Fi,
-- `API_SERVER_URL` for REST calls,
-- `WS_SERVER_URL`, `WS_SERVER_PORT`, and `WS_PATH` for the WebSocket,
-- `PUMP_HISTORY_PATH` for water-usage reports.
+- `WS_SERVER_URL`, `WS_SERVER_PORT`, and `WS_PATH` for the WebSocket.
 
-`PUMP_PARAMETERS_PATH` may be overridden; it defaults to
-`/pump/parameters/`. The WebSocket path MUST end with a slash.
+The WebSocket path MUST end with a slash.
 
 ## 10. Non-functional requirements
 
@@ -647,7 +673,7 @@ define is absent:
   implementations and no real network.
 - **NFR-9 (Compatibility)** Python is `>=3.14`, the Flutter SDK is `^3.12.2`,
   and the ESP32 sketch uses the Arduino framework with `WebSocketsClient`,
-  `WebServer`, `ArduinoJson`, `HTTPClient`, and `DHT`.
+  `ArduinoJson`, and `DHT`.
 
 ## 11. Constraints and assumptions
 
@@ -657,14 +683,12 @@ define is absent:
 - The API, device, and database use local wall-clock time; there is no explicit
   timezone setting. "Today" and the 30-minute staleness check use the API
   host's local time.
-- The device HTTP server is reachable directly from the API over the network.
-  There is no relay, NAT traversal, or authentication.
+- There is no relay, NAT traversal, or authentication.
 - The irrigation timer needs internet access for Open-Meteo. Gemini is optional.
 - A `SPRINKLE` mode exists in the shared enum but has no firmware behavior; the
   API's irrigation logic never selects it.
-- Readings are not buffered on the device when Wi-Fi or the WebSocket is down.
-  Water-usage reports are queued in RAM and can be dropped if the queue is
-  full.
+- Readings and water-usage reports are not buffered on the device when Wi-Fi or
+  the WebSocket is down; they are lost.
 - The schema must be migrated before the API starts; the app does not create
   tables.
 - The frontend is deployed as a web build; the other Flutter platform scaffolds
@@ -699,9 +723,9 @@ feed, view models, the three screens, and cross-screen regressions.
   frontend without a refresh.
 - The dashboard shows the latest reading, today's usage, alerts, watering
   summary, and the three pump modes.
-- Changing a pump mode in the app updates the API, and the device poller pushes
-  it to the device when `DEVICE_URL` is configured.
-- A pump activation on the device posts litres to `/pump/history/`, and the
+- Changing a pump mode in the app updates the API, which pushes it to the
+  device over the WebSocket; the device runs the pump and confirms the mode.
+- A pump activation on the device sends litres over the WebSocket, and the
   amount appears in the history and today's total.
 - The sensor screen switches between Real-time and averaged ranges, and the
   graphs refresh as live readings arrive.
@@ -724,7 +748,7 @@ feed, view models, the three screens, and cross-screen regressions.
 | Area | Source of truth |
 |------|-----------------|
 | Firmware behavior | `microcontroller/microcontroller.ino` |
-| Device HTTP API | `microcontroller/microcontroller.ino` |
+| Device WebSocket protocol | `microcontroller/microcontroller.ino` |
 | REST and WebSocket contracts | `api/app/routers/`, `api/app/schemas.py` |
 | Pump-mode contract | `api/app/modes.py`, firmware, `frontend/lib/model/pump_info.dart` |
 | Persistence | `api/app/models.py`, `api/alembic/` |

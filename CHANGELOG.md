@@ -16,15 +16,23 @@ for completeness.
   behavior, configuration, and acceptance criteria.
 - Microcontroller registration when a socket connects to `/mc-ws/`, which
   provisions sensors 1-3 and pumps 1-3 if they are missing.
+- The API pushes pump modes and activation parameters to the microcontroller
+  over `/mc-ws/`, and the device sends water usage over the same socket.
+- Mode changes from the app run the pump immediately, and the device confirms
+  the applied mode so the API records the observed mode.
 
 ### Changed
 
 - The dashboard now renders one pump card per pump returned by `GET /pump/`
   instead of hard-coding three cards.
+- The microcontroller uses only the WebSocket: it no longer runs an HTTP server
+  or makes HTTP requests, and the API no longer polls it.
 
 ### Removed
 
 - The local-only running status and start/stop button from the pump cards.
+- The device HTTP poller and the `DEVICE_URL` and
+  `DEVICE_POLL_INTERVAL_SECONDS` settings.
 
 ## [42ec0ba] - 2026-10-23 - test: added regression tests to the backend and frontend
 
