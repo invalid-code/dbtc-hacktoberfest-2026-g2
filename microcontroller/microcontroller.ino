@@ -664,6 +664,7 @@ void loop() {
     Serial.println(tempSensor1Value);
 
     float humiditySensor1Value = tempSensor1.readHumidity();
+    humiditySensor1Value = constrain(humiditySensor1Value, 0.0f, 100.0f);
     Serial.print("Humidity 1 raw: ");
     Serial.println(humiditySensor1Value);
 
@@ -683,6 +684,7 @@ void loop() {
     Serial.println(tempSensor2Value);
 
     float humiditySensor2Value = tempSensor2.readHumidity();
+    humiditySensor2Value = constrain(humiditySensor2Value, 0.0f, 100.0f);
     Serial.print("Humidity 2 raw: ");
     Serial.println(humiditySensor2Value);
 
@@ -702,6 +704,7 @@ void loop() {
     Serial.println(tempSensor3Value);
 
     float humiditySensor3Value = tempSensor3.readHumidity();
+    humiditySensor3Value = constrain(humiditySensor3Value, 0.0f, 100.0f);
     Serial.print("Humidity 3 raw: ");
     Serial.println(humiditySensor3Value);
 
