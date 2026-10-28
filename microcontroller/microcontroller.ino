@@ -124,11 +124,6 @@ struct PumpCycle {
 // Indexed by pump id; slot 0 is unused.
 PumpCycle pumpCycles[4] = {};
 
-// Mode changes that arrived over the socket, run by the main loop so the
-// socket callback never blocks on a watering.
-bool pumpActivationPending[4] = {false, false, false, false};
-int pendingPumpMode[4] = {FAST, FAST, FAST, FAST};
-
 // ---- Mode helpers ----------------------------------------------------------
 
 // The device speaks mode names over the socket, while the database stores ordinals.
@@ -199,9 +194,8 @@ void sendModeApplied(int pumpId, int mode) {
   webSocket.sendTXT(json);
 }
 
-// Applies a mode that came over the socket. A live command also schedules a
-// watering, the modes sent on connect only bring the device in step.
-bool applyPumpMode(int pumpId, int mode, bool runPump) {
+// Applies a mode that came over the socket.
+bool applyPumpMode(int pumpId, int mode) {
   int* slot = modeSlotFor(pumpId);
   if (slot == nullptr) {
     return false;
@@ -216,10 +210,6 @@ bool applyPumpMode(int pumpId, int mode, bool runPump) {
                   modeName(mode));
   }
 
-  if (runPump) {
-    pumpActivationPending[pumpId] = true;
-    pendingPumpMode[pumpId] = mode;
-  }
   return changed;
 }
 
@@ -249,7 +239,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
           int pumpId = String(entry.key().c_str()).toInt();
           const char* name = entry.value().as<const char*>();
           if (pumpId >= 1 && pumpId <= 3 && name != nullptr) {
-            applyPumpMode(pumpId, modeFromName(String(name)), false);
+            applyPumpMode(pumpId, modeFromName(String(name)));
           }
         }
         break;
@@ -259,7 +249,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         int pumpId = doc["pump"] | 0;
         const char* requestedMode = doc["mode"] | "";
         if (pumpId >= 1 && pumpId <= 3 && requestedMode[0] != '\0') {
-          applyPumpMode(pumpId, modeFromName(String(requestedMode)), true);
+          applyPumpMode(pumpId, modeFromName(String(requestedMode)));
         }
         break;
       }
@@ -644,15 +634,6 @@ void loop() {
   // The pumps are driven here instead of in the socket callback, so the
   // watering keeps going while the socket is busy.
   servicePumpCycles();
-
-  // A mode change that arrived over the socket starts a watering here, outside
-  // the socket callback.
-  for (int pumpId = 1; pumpId <= 3; pumpId++) {
-    if (pumpActivationPending[pumpId]) {
-      pumpActivationPending[pumpId] = false;
-      startPumpCycle(pumpId, pendingPumpMode[pumpId]);
-    }
-  }
 
   if (WiFi.status() != WL_CONNECTED) {
     static unsigned long lastWifiAttempt = 0;
